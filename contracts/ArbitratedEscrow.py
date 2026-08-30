@@ -30,7 +30,7 @@ class _Recipient:
         pass
 
 
-class ArbitratedEscrow(gl.contract.Contract):
+class ArbitratedEscrow(gl.Contract):
     escrows: TreeMap[u256, EscrowRecord]
     next_escrow_id: u256
 

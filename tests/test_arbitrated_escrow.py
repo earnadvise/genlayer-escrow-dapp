@@ -6,10 +6,8 @@ def test_escrow_happy_path(direct_deploy, direct_vm):
     """
     Tests the basic flow: escrow creation, fund deposit, delivery submission, and manual buyer approval.
     """
-    # Deploy contract
     escrow_contract = direct_deploy("contracts/ArbitratedEscrow.py")
 
-    # Define addresses for simulation
     alice = Address("0x0000000000000000000000000000000000000001")
     bob = Address("0x0000000000000000000000000000000000000002")
 
@@ -28,7 +26,7 @@ def test_escrow_happy_path(direct_deploy, direct_vm):
     # 2. Deposit funds (1000 wei)
     direct_vm.value = u256(1000)
     escrow_contract.deposit(escrow_id)
-    direct_vm.value = u256(0)  # Reset value context
+    direct_vm.value = u256(0)
 
     escrow = escrow_contract.get_escrow(escrow_id)
     assert escrow.amount == u256(1000)
@@ -80,10 +78,10 @@ def test_escrow_voluntary_refund(direct_deploy, direct_vm):
     assert escrow.resolution_reason == "Seller voluntarily refunded the buyer"
 
 
-def test_escrow_dispute_resolution(direct_deploy, direct_vm):
+def test_dispute_race_condition_prevented_and_resolved(direct_deploy, direct_vm):
     """
-    Tests a dispute scenario, checking that dispute statements are recorded and that the
-    contract resolves disputes using the AI consensus mock values (splitting funds 60/40).
+    Tests that a dispute CANNOT be adjudicated when only one party has filed a statement
+    (preventing front-running/race condition), and only succeeds once the counterparty responds.
     """
     escrow_contract = direct_deploy("contracts/ArbitratedEscrow.py")
 
@@ -92,9 +90,7 @@ def test_escrow_dispute_resolution(direct_deploy, direct_vm):
 
     # Create & deposit
     direct_vm.sender = alice
-    escrow_id = escrow_contract.create_escrow(
-        bob.as_hex, "Design vector logo files."
-    )
+    escrow_id = escrow_contract.create_escrow(bob.as_hex, "Design vector logo files.")
     direct_vm.value = u256(5000)
     escrow_contract.deposit(escrow_id)
     direct_vm.value = u256(0)
@@ -109,16 +105,20 @@ def test_escrow_dispute_resolution(direct_deploy, direct_vm):
         escrow_id, "The design is incomplete and lines are jagged."
     )
 
-    # Seller files dispute with statement
+    escrow = escrow_contract.get_escrow(escrow_id)
+    assert escrow.status == "DISPUTED"
+    assert escrow.dispute_buyer_statement == "The design is incomplete and lines are jagged."
+    assert escrow.dispute_seller_statement == ""
+
+    # ATTEMPT RACE: Trying to adjudicate before seller responds MUST fail
+    with pytest.raises(Exception):
+        escrow_contract.adjudicate_escrow(escrow_id)
+
+    # Seller files response statement
     direct_vm.sender = bob
     escrow_contract.dispute_escrow(
         escrow_id, "I followed the specification sheet exactly."
     )
-
-    escrow = escrow_contract.get_escrow(escrow_id)
-    assert escrow.status == "DISPUTED"
-    assert escrow.dispute_buyer_statement == "The design is incomplete and lines are jagged."
-    assert escrow.dispute_seller_statement == "I followed the specification sheet exactly."
 
     # Mock non-deterministic web page rendering for the delivery URL
     direct_vm.mock_web(
@@ -126,27 +126,72 @@ def test_escrow_dispute_resolution(direct_deploy, direct_vm):
     )
 
     # Mock LLM decision: Split 60% to Seller, 40% to Buyer
-    decision_json = '{"payment_to_seller_percentage": 60, "reasoning": "Seller completed the primary shapes but did not apply vector smoothing."}'
+    decision_json = '{"payment_to_seller_percentage": 60, "reasoning": "Seller completed primary shapes but did not apply vector smoothing."}'
     direct_vm.mock_llm(r".*arbitrator.*", decision_json)
 
-    # Trigger dispute adjudication
+    # Now adjudication succeeds because both parties submitted their statements
     direct_vm.sender = alice
     escrow_contract.adjudicate_escrow(escrow_id)
 
-    # Verify final payouts and status
     escrow = escrow_contract.get_escrow(escrow_id)
     assert escrow.status == "RESOLVED"
     assert escrow.payout_seller_percent == u256(60)
     assert (
         escrow.resolution_reason
-        == "Seller completed the primary shapes but did not apply vector smoothing."
+        == "Seller completed primary shapes but did not apply vector smoothing."
     )
+    assert escrow.amount == u256(0)
+
+
+def test_dispute_explicit_waiver_path(direct_deploy, direct_vm):
+    """
+    Tests that if a counterparty explicitly waives their response statement,
+    adjudication is unblocked and resolves fairly.
+    """
+    escrow_contract = direct_deploy("contracts/ArbitratedEscrow.py")
+
+    alice = Address("0x0000000000000000000000000000000000000001")
+    bob = Address("0x0000000000000000000000000000000000000002")
+
+    # Create & deposit
+    direct_vm.sender = alice
+    escrow_id = escrow_contract.create_escrow(bob.as_hex, "Front-end refactor.")
+    direct_vm.value = u256(3000)
+    escrow_contract.deposit(escrow_id)
+    direct_vm.value = u256(0)
+
+    # Seller submits delivery
+    direct_vm.sender = bob
+    escrow_contract.submit_delivery(escrow_id, "https://github.com/bob/repo")
+
+    # Buyer files dispute
+    direct_vm.sender = alice
+    escrow_contract.dispute_escrow(escrow_id, "Build failed on test suite.")
+
+    # Seller explicitly waives right to submit a dispute counter-statement
+    direct_vm.sender = bob
+    escrow_contract.waive_dispute_statement(escrow_id)
+
+    escrow = escrow_contract.get_escrow(escrow_id)
+    assert escrow.seller_waived_statement is True
+
+    # Mock LLM decision: 10% to seller, 90% refund to buyer
+    decision_json = '{"payment_to_seller_percentage": 10, "reasoning": "Seller provided boilerplate but failed test requirements."}'
+    direct_vm.mock_llm(r".*arbitrator.*", decision_json)
+
+    # Adjudication proceeds successfully
+    direct_vm.sender = alice
+    escrow_contract.adjudicate_escrow(escrow_id)
+
+    escrow = escrow_contract.get_escrow(escrow_id)
+    assert escrow.status == "RESOLVED"
+    assert escrow.payout_seller_percent == u256(10)
     assert escrow.amount == u256(0)
 
 
 def test_escrow_reverts(direct_deploy, direct_vm):
     """
-    Verifies state checks and failure conditions (reverts).
+    Verifies state checks and unauthorized caller failure conditions.
     """
     escrow_contract = direct_deploy("contracts/ArbitratedEscrow.py")
 
@@ -173,3 +218,8 @@ def test_escrow_reverts(direct_deploy, direct_vm):
     # 3. Buyer trying to approve delivery before it's deposited
     with pytest.raises(Exception):
         escrow_contract.approve_delivery(escrow_id)
+
+    # 4. Unauthorized user trying to waive statement
+    direct_vm.sender = charlie
+    with pytest.raises(Exception):
+        escrow_contract.waive_dispute_statement(escrow_id)

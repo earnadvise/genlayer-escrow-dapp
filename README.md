@@ -15,12 +15,14 @@ graph TD
     A[Buyer deposits GEN] --> B(Seller submits work / URL)
     B --> C{Happy Path?}
     C -- Yes --> D[Buyer approves & Seller paid]
-    C -- No --> E[Buyer or Seller disputes]
-    E --> F[Both submit statements]
-    F --> G[Run Adjudicate Escrow]
-    G --> H[Validators scrape URL & run LLM]
-    H --> I[Reach consensus on split %]
-    I --> J[Funds distributed automatically]
+    C -- No --> E[Buyer or Seller files dispute]
+    E --> F[Dispute Window: Both submit statements or explicit waiver]
+    F --> G{Both parties ready?}
+    G -- No --> H[Adjudication blocked / Reverts]
+    G -- Yes --> I[Run Adjudicate Escrow]
+    I --> J[Validators scrape URL & run LLM consensus]
+    J --> K[Reach consensus on split %]
+    K --> L[Funds distributed automatically]
 ```
 
 ### 1. The Escrow State Machine
@@ -28,16 +30,22 @@ An escrow goes through the following statuses:
 *   `AWAITING_DEPOSIT`: Buyer creates the escrow with the agreement text and seller address.
 *   `ESCROWED`: Buyer calls `deposit()` and locks the native `GEN` tokens in the contract.
 *   `DELIVERED`: Seller calls `submit_delivery()` and submits a text description or a web URL pointing to their work.
-*   `DISPUTED`: If there is a dispute, either party calls `dispute_escrow()` to lock the funds and submit their side of the story.
+*   `DISPUTED`: If there is a dispute, either party calls `dispute_escrow()` to lock the funds and submit their statement.
 *   `RESOLVED` / `REFUNDED`: The final state after manual approval, voluntary refund, or automated AI arbitration.
 
-### 2. AI Consensus Adjudication Logic
-When `adjudicate_escrow(escrow_id)` is triggered:
+### 2. Dispute-Response Race Condition Prevention
+To prevent front-running and unfair one-sided judgments, the contract guarantees that adjudication **cannot run** until both parties have had full opportunity to participate:
+*   When a party files a dispute with `dispute_escrow(id, statement)`, the counterparty's right to respond is protected.
+*   `adjudicate_escrow(id)` strictly enforces that **both parties must have either submitted their statement OR explicitly called `waive_dispute_statement(id)`**.
+*   Attempting to call `adjudicate_escrow` prematurely reverts with `gl.vm.UserError`.
+
+### 3. AI Consensus Adjudication Logic
+When `adjudicate_escrow(escrow_id)` is triggered (after bilateral responses or explicit waiver):
 1.  **Web Scraping (Non-Deterministic):** If the seller's delivery artifact is a URL, the validator node fetches the live content using `gl.nondet.web.render(url, mode="text")`.
 2.  **LLM Inference (Non-Deterministic):** An LLM prompt is executed:
-    *   It reviews the original **Contract Agreement**, the **Delivery Artifact** (and its fetched web page content), the **Buyer's Dispute Statement**, and the **Seller's Dispute Statement**.
+    *   It reviews the original **Contract Agreement**, the **Delivery Artifact** (and its fetched web page content), the **Buyer's Dispute Statement** (or explicit waiver notice), and the **Seller's Dispute Statement** (or explicit waiver notice).
     *   It determines who is in the right and allocates a payout percentage (from `0%` to `100%`) to the seller, returning the remaining funds to the buyer.
-3.  **The Equivalence Principle (`gl.eq_principle.strict_eq`):** A leader validator proposes the allocation and reasoning. Other validator nodes verify the proposal against the criteria (fairness, logical reasoning, and proper JSON format). Once a consensus is reached, the result is written back to the chain.
+3.  **The Equivalence Principle (`gl.eq_principle.strict_eq`):** A leader validator proposes the allocation and reasoning. Other validator nodes verify the proposal against the criteria (fairness, logical reasoning, and proper JSON format). Once consensus is reached, the result is written back to the chain.
 4.  **Payout Distribution:** The contract automatically splits the escrow balance and transfers `X%` to the seller and `(100 - X)%` to the buyer.
 
 ---
@@ -58,6 +66,8 @@ class EscrowRecord:
     delivery_artifact: str        # Text description or URL of the delivered work
     dispute_buyer_statement: str  # Buyer's claim during a dispute
     dispute_seller_statement: str # Seller's claim during a dispute
+    buyer_waived_statement: bool  # Whether buyer explicitly waived submitting a statement
+    seller_waived_statement: bool # Whether seller explicitly waived submitting a statement
     resolution_reason: str        # Reasoning provided by the AI validators
     payout_seller_percent: u256   # 0-100 percentage paid to the seller
 ```
@@ -82,9 +92,12 @@ class EscrowRecord:
 *   `dispute_escrow(escrow_id: u256, statement: str)`
     *   *Callable by:* The Buyer or Seller.
     *   *Purpose:* Signals a dispute and records the party's explanation.
+*   `waive_dispute_statement(escrow_id: u256)`
+    *   *Callable by:* The Buyer or Seller.
+    *   *Purpose:* Explicitly waives the caller's right to submit a dispute counter-statement, unblocking adjudication.
 *   `adjudicate_escrow(escrow_id: u256)`
     *   *Callable by:* Anyone (usually buyer/seller).
-    *   *Purpose:* Triggers the AI consensus arbitration and payouts.
+    *   *Purpose:* Triggers the AI consensus arbitration and payouts once both parties have submitted statements or waived.
 
 ### View Methods
 *   `get_escrow(escrow_id: u256) -> EscrowRecord`

@@ -18,6 +18,8 @@ class EscrowRecord:
     delivery_artifact: str
     dispute_buyer_statement: str
     dispute_seller_statement: str
+    buyer_waived_statement: bool
+    seller_waived_statement: bool
     resolution_reason: str
     payout_seller_percent: u256
 
@@ -55,6 +57,8 @@ class ArbitratedEscrow(gl.Contract):
             delivery_artifact="",
             dispute_buyer_statement="",
             dispute_seller_statement="",
+            buyer_waived_statement=False,
+            seller_waived_statement=False,
             resolution_reason="",
             payout_seller_percent=u256(0)
         )
@@ -168,6 +172,9 @@ class ArbitratedEscrow(gl.Contract):
         if escrow_id not in self.escrows:
             raise gl.vm.UserError("Escrow not found")
 
+        if not statement or not statement.strip():
+            raise gl.vm.UserError("Dispute statement cannot be empty")
+
         escrow = self.escrows[escrow_id]
         sender = gl.message.sender_address
 
@@ -179,16 +186,45 @@ class ArbitratedEscrow(gl.Contract):
 
         if sender == escrow.buyer:
             escrow.dispute_buyer_statement = statement
+            escrow.buyer_waived_statement = False
         else:
             escrow.dispute_seller_statement = statement
+            escrow.seller_waived_statement = False
 
         escrow.status = "DISPUTED"
+        self.escrows[escrow_id] = escrow
+
+    @gl.public.write
+    def waive_dispute_statement(self, escrow_id: u256) -> None:
+        """
+        Allows a party to explicitly waive their right to submit a dispute counter-statement,
+        unblocking adjudication without requiring them to write a statement.
+        """
+        if escrow_id not in self.escrows:
+            raise gl.vm.UserError("Escrow not found")
+
+        escrow = self.escrows[escrow_id]
+        sender = gl.message.sender_address
+
+        if sender != escrow.buyer and sender != escrow.seller:
+            raise gl.vm.UserError("Only the buyer or seller can waive their dispute statement")
+
+        if escrow.status != "DISPUTED":
+            raise gl.vm.UserError("Can only waive statement when escrow is in DISPUTED status")
+
+        if sender == escrow.buyer:
+            escrow.buyer_waived_statement = True
+        else:
+            escrow.seller_waived_statement = True
+
         self.escrows[escrow_id] = escrow
 
     @gl.public.write
     def adjudicate_escrow(self, escrow_id: u256) -> None:
         """
         Resolves a disputed escrow using the AI-Validator consensus mechanism.
+        Enforces that BOTH parties have submitted a statement or explicitly waived their response,
+        closing the dispute-response race condition.
         """
         if escrow_id not in self.escrows:
             raise gl.vm.UserError("Escrow not found")
@@ -198,14 +234,27 @@ class ArbitratedEscrow(gl.Contract):
         if escrow.status != "DISPUTED":
             raise gl.vm.UserError("Escrow is not in disputed state")
 
-        if not escrow.dispute_buyer_statement and not escrow.dispute_seller_statement:
-            raise gl.vm.UserError("At least one party must submit a dispute statement")
+        buyer_ready = bool(escrow.dispute_buyer_statement.strip()) or escrow.buyer_waived_statement
+        seller_ready = bool(escrow.dispute_seller_statement.strip()) or escrow.seller_waived_statement
+
+        if not buyer_ready or not seller_ready:
+            raise gl.vm.UserError(
+                "Cannot adjudicate: both parties must submit a dispute statement or explicitly waive their response"
+            )
 
         # Compile inputs for the non-deterministic block
         agreement = escrow.agreement_desc
         artifact = escrow.delivery_artifact
-        buyer_stmt = escrow.dispute_buyer_statement
-        seller_stmt = escrow.dispute_seller_statement
+        buyer_stmt = (
+            escrow.dispute_buyer_statement
+            if escrow.dispute_buyer_statement
+            else "[Buyer explicitly waived submitting a counter-statement]"
+        )
+        seller_stmt = (
+            escrow.dispute_seller_statement
+            if escrow.dispute_seller_statement
+            else "[Seller explicitly waived submitting a counter-statement]"
+        )
 
         def resolve_dispute() -> str:
             # We can attempt to render the artifact if it's a URL

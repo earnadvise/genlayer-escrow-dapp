@@ -1,8 +1,17 @@
-# ArbitratedEscrow - Intelligent Contract Primitive
+# ArbitratedEscrow - Intelligent Contract Primitive & Web3 DApp
 
-An educational, reusable, and robust GenLayer Intelligent Contract primitive implementing a **Decentralized Escrow Registry with AI-Validator Arbitration**.
+An educational, reusable, and robust GenLayer Intelligent Contract primitive and Web3 DApp implementing a **Decentralized Escrow Registry with AI-Validator Arbitration**.
 
-Traditional blockchain escrow contracts are structurally limited because they can only resolve disputes deterministically (e.g., via a simple API check or a trusted third-party oracle multisig). This primitive showcases how GenLayer allows contracts to resolve subjective, real-world agreements (like freelance contracts or trade disputes) autonomously using decentralized AI-validator consensus.
+Traditional blockchain escrow contracts are structurally limited because they can only resolve disputes deterministically (e.g., via a simple API check or a trusted third-party oracle multisig). This primitive showcases how GenLayer allows contracts to resolve subjective, real-world agreements (like freelance contracts, code reviews, or trade disputes) autonomously using decentralized AI-validator consensus.
+
+---
+
+## 🌟 Milestone 1 Updates & Features
+
+- 🖥️ **Full Web3 DApp Frontend (`/frontend`)**: Modern, responsive dark-mode dashboard built with TailwindCSS, connecting directly to the Bradbury Testnet contract (`0x27765327341E605F84493563A03Bf33d71ae0928`).
+- 🛡️ **Race-Condition-Protected Dispute Engine**: Enforces strict bilateral statement requirements or explicit waivers (`waive_dispute_statement`), preventing front-running of AI arbitration.
+- 📜 **Client Interaction Scripts (`/scripts`)**: Programmatic interaction scripts using the GenLayer client SDK for automated integration.
+- 🧪 **Expanded Verification Suite (`/tests`)**: 5 comprehensive unit tests validating standard flows, race-condition prevention, explicit waivers, and unauthorized caller reverts.
 
 ---
 
@@ -28,7 +37,7 @@ graph TD
 ### 1. The Escrow State Machine
 An escrow goes through the following statuses:
 *   `AWAITING_DEPOSIT`: Buyer creates the escrow with the agreement text and seller address.
-*   `ESCROWED`: Buyer calls `deposit()` and locks the native `GEN` tokens in the contract.
+*   `ESCROWED`: Buyer calls `deposit()` and locks native `GEN` tokens in the contract.
 *   `DELIVERED`: Seller calls `submit_delivery()` and submits a text description or a web URL pointing to their work.
 *   `DISPUTED`: If there is a dispute, either party calls `dispute_escrow()` to lock the funds and submit their statement.
 *   `RESOLVED` / `REFUNDED`: The final state after manual approval, voluntary refund, or automated AI arbitration.
@@ -105,6 +114,19 @@ class EscrowRecord:
 
 ---
 
+## 🖥️ Running the Web3 Frontend DApp
+
+The frontend is a lightweight, zero-dependency modern Web3 app:
+
+1. Open `frontend/index.html` directly in your browser or serve it with any local server:
+   ```bash
+   npx serve frontend
+   ```
+2. Connect MetaMask, Rabby, or GenLayer Wallet to the **Bradbury Testnet**.
+3. Create, deposit, inspect, dispute, and adjudicate escrows with a live visual interface.
+
+---
+
 ## 🧪 Local Testing Guide
 
 Unit tests are written using the `genlayer-test` Direct Mode in-memory VM framework, allowing tests to run in milliseconds without launching a full simulator or Docker container.
@@ -114,7 +136,7 @@ Unit tests are written using the `genlayer-test` Direct Mode in-memory VM framew
     ```bash
     cd intelligent-contracts
     ```
-2.  Install the testing dependencies:
+2.  Install testing dependencies:
     ```bash
     pip install pytest genlayer-test
     ```
@@ -123,14 +145,8 @@ Unit tests are written using the `genlayer-test` Direct Mode in-memory VM framew
     pytest tests/
     ```
 
-### Mocking Mechanics in Tests
-Because AI arbitration calls are non-deterministic, the test suite (`tests/test_arbitrated_escrow.py`) simulates these using `direct_vm` mock methods:
-*   **Web Scrape Mocks:**
-    ```python
-    direct_vm.mock_web(r".*logo-draft\.svg", {"status": 200, "body": "<svg>Mock SVG data</svg>"})
-    ```
-*   **LLM Decision Mocks:**
-    ```python
-    decision_json = '{"payment_to_seller_percentage": 60, "reasoning": "Completed shapes but missed smoothing."}'
-    direct_vm.mock_llm(r".*arbitrator.*", decision_json)
-    ```
+---
+
+## 🔗 Live Deployment Info
+*   **Bradbury Testnet Contract:** `0x27765327341E605F84493563A03Bf33d71ae0928`
+*   **Explorer URL:** [https://explorer-bradbury.genlayer.com/address/0x27765327341E605F84493563A03Bf33d71ae0928](https://explorer-bradbury.genlayer.com/address/0x27765327341E605F84493563A03Bf33d71ae0928)

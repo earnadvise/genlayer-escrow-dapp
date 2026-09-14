@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GenLayer Arbitrated Escrow | AI-Powered Web3 DApp</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['"Plus Jakarta Sans"', 'sans-serif'],
+            mono: ['"JetBrains Mono"', 'monospace'],
+          },
+          colors: {
+            genlayer: {
+              50: '#f0fdfa',
+              100: '#ccfbf1',
+              400: '#2dd4bf',
+              500: '#14b8a6',
+              600: '#0d9488',
+              900: '#134e4a',
+              dark: '#0b0f19',
+              card: '#111827',
+              border: '#1f2937',
+              accent: '#6366f1'
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    body {
+      background-color: #0b0f19;
+      background-image: 
+        radial-gradient(at 0% 0%, rgba(99, 102, 241, 0.12) 0px, transparent 50%),
+        radial-gradient(at 100% 100%, rgba(20, 184, 166, 0.12) 0px, transparent 50%);
+      background-attachment: fixed;
+    }
+    .glass-card {
+      background: rgba(17, 24, 39, 0.85);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+    .glow-accent {
+      box-shadow: 0 0 35px -5px rgba(99, 102, 241, 0.3);
+    }
+    .glow-teal {
+      box-shadow: 0 0 35px -5px rgba(20, 184, 166, 0.3);
+    }
+  </style>
+</head>
+<body class="text-slate-100 min-h-screen flex flex-col font-sans antialiased selection:bg-indigo-500 selection:text-white">
+
+  <!-- Navigation Bar -->
+  <header class="sticky top-0 z-50 glass-card border-b border-slate-800/80">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">
+      <div class="flex items-center space-x-4">
+        <div class="w-11 h-11 rounded-xl bg-gradient-to-tr from-indigo-600 via-teal-500 to-emerald-400 flex items-center justify-center shadow-lg shadow-indigo-500/20">
+          <i data-lucide="scale" class="w-6 h-6 text-white"></i>
+        </div>
+        <div>
+          <div class="flex items-center space-x-2">
+            <span class="font-extrabold text-xl tracking-tight bg-gradient-to-r from-white via-slate-200 to-teal-300 bg-clip-text text-transparent">ArbitratedEscrow</span>
+            <span class="text-[10px] font-mono font-bold tracking-wider px-2 py-0.5 rounded-full bg-teal-500/10 text-teal-400 border border-teal-500/20">BRADBURY TESTNET</span>
+          </div>
+          <p class="text-xs text-slate-400">Intelligent Contract with Decentralized AI Arbitration</p>
+        </div>
+      </div>
+
+      <!-- Wallet & Contract Info -->
+      <div class="flex items-center space-x-3">
+        <div class="hidden md:flex flex-col items-end text-xs mr-2">
+          <span class="text-slate-400">Contract Address</span>
+          <a href="https://explorer-bradbury.genlayer.com/address/0x27765327341E605F84493563A03Bf33d71ae0928" target="_blank" class="font-mono text-teal-400 hover:text-teal-300 transition flex items-center gap-1">
+            <span>0x2776...0928</span>
+            <i data-lucide="external-link" class="w-3 h-3"></i>
+          </a>
+        </div>
+        <button id="connectWalletBtn" class="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-teal-600 hover:from-indigo-500 hover:to-teal-500 text-white font-medium text-sm transition shadow-lg shadow-indigo-500/25 cursor-pointer">
+          <i data-lucide="wallet" class="w-4 h-4"></i>
+          <span id="walletBtnText">Connect Wallet</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Hero Header Banner -->
+  <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
+    
+    <div class="glass-card rounded-2xl p-6 sm:p-8 border border-slate-800 relative overflow-hidden">
+      <div class="absolute -right-10 -bottom-10 w-80 h-80 bg-gradient-to-br from-indigo-600/10 to-teal-500/10 rounded-full blur-3xl pointer-events-none"></div>
+      <div class="relative z-10 grid grid-cols-1 lg:grid-cols-3 gap-6 items-center">
+        <div class="lg:col-span-2 space-y-3">
+          <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 text-xs font-semibold">
+            <i data-lucide="sparkles" class="w-3.5 h-3.5"></i>
+            <span>Milestone 1: Web3 DApp & Non-Deterministic AI Dispute Settlement</span>
+          </div>
+          <h1 class="text-3xl sm:text-4xl font-extrabold text-white tracking-tight leading-tight">
+            Subjective Agreements, <br class="hidden sm:inline" />
+            <span class="bg-gradient-to-r from-indigo-400 via-teal-300 to-emerald-400 bg-clip-text text-transparent">Autonomously Arbitrated on GenLayer</span>
+          </h1>
+          <p class="text-slate-300 text-sm sm:text-base leading-relaxed max-w-2xl">
+            Lock funds for development, design, or trade agreements. If a dispute occurs, GenLayer's AI validator consensus inspects deliverables via live web rendering and reaches consensus on a fair percentage split with race-condition protected bilateral statements.
+          </p>
+        </div>
+        
+        <div class="glass-card rounded-xl p-4 border border-slate-800/80 bg-slate-900/60 space-y-3">
+          <div class="text-xs font-semibold text-slate-400 uppercase tracking-wider flex items-center justify-between">
+            <span>Live Network Metrics</span>
+            <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+          </div>
+          <div class="grid grid-cols-2 gap-2 text-xs">
+            <div class="p-2.5 rounded-lg bg-slate-800/50 border border-slate-700/50">
+              <div class="text-slate-400 text-[11px]">Consensus Mode</div>
+              <div class="font-bold text-teal-400 mt-0.5">Equivalence Principle</div>
+            </div>
+            <div class="p-2.5 rounded-lg bg-slate-800/50 border border-slate-700/50">
+              <div class="text-slate-400 text-[11px]">Race Protection</div>
+              <div class="font-bold text-indigo-400 mt-0.5">Bilateral / Waiver</div>
+            </div>
+            <div class="p-2.5 rounded-lg bg-slate-800/50 border border-slate-700/50">
+              <div class="text-slate-400 text-[11px]">Web Inspection</div>
+              <div class="font-bold text-slate-200 mt-0.5">gl.nondet.web.render</div>
+            </div>
+            <div class="p-2.5 rounded-lg bg-slate-800/50 border border-slate-700/50">
+              <div class="text-slate-400 text-[11px]">Settlement Token</div>
+              <div class="font-bold text-emerald-400 mt-0.5">Native GEN</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Main Navigation Tabs -->
+    <div class="flex border-b border-slate-800 space-x-8 text-sm font-medium">
+      <button id="tabCreate" class="tab-btn pb-4 border-b-2 border-teal-500 text-teal-400 flex items-center gap-2 transition cursor-pointer">
+        <i data-lucide="plus-circle" class="w-4 h-4"></i>
+        <span>Create Escrow</span>
+      </button>
+      <button id="tabManage" class="tab-btn pb-4 border-b-2 border-transparent text-slate-400 hover:text-slate-200 flex items-center gap-2 transition cursor-pointer">
+        <i data-lucide="layers" class="w-4 h-4"></i>
+        <span>Escrow Manager & Lookup</span>
+      </button>
+      <button id="tabDispute" class="tab-btn pb-4 border-b-2 border-transparent text-slate-400 hover:text-slate-200 flex items-center gap-2 transition cursor-pointer">
+        <i data-lucide="shield-alert" class="w-4 h-4"></i>
+        <span>AI Arbitration Hub</span>
+      </button>
+    </div>
+
+    <!-- TAB 1: CREATE ESCROW -->
+    <section id="sectionCreate" class="tab-content grid grid-cols-1 lg:grid-cols-3 gap-8">
+      <div class="lg:col-span-2 glass-card rounded-2xl p-6 sm:p-8 border border-slate-800 space-y-6">
+        <div>
+          <h2 class="text-xl font-bold text-white flex items-center gap-2">
+            <i data-lucide="file-plus-2" class="w-5 h-5 text-teal-400"></i>
+            <span>Initialize New Escrow Agreement</span>
+          </h2>
+          <p class="text-sm text-slate-400 mt-1">Specify seller address and agreement requirements. Once created, you can deposit funds in GEN.</p>
+        </div>
+
+        <form id="createEscrowForm" class="space-y-4">
+          <div>
+            <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">Seller Address (EVM / GenLayer)</label>
+            <input type="text" id="inputSellerAddress" required placeholder="0x..." class="w-full px-4 py-3 rounded-xl bg-slate-900/90 border border-slate-700/80 focus:border-teal-500 focus:ring-1 focus:ring-teal-500 text-slate-100 font-mono text-sm placeholder-slate-500 outline-none transition" />
+          </div>
+
+          <div>
+            <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">Agreement Description & Deliverable Specs</label>
+            <textarea id="inputAgreementDesc" rows="4" required placeholder="e.g. Build a Python web scraper that extracts news articles and exports to clean JSON format. Must handle rate-limits and include unit tests." class="w-full px-4 py-3 rounded-xl bg-slate-900/90 border border-slate-700/80 focus:border-teal-500 focus:ring-1 focus:ring-teal-500 text-slate-100 text-sm placeholder-slate-500 outline-none transition"></textarea>
+          </div>
+
+          <div>
+            <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">Initial Deposit Amount (GEN)</label>
+            <div class="relative">
+              <input type="number" id="inputDepositAmount" step="0.01" min="0.001" placeholder="1.0" class="w-full pl-4 pr-16 py-3 rounded-xl bg-slate-900/90 border border-slate-700/80 focus:border-teal-500 focus:ring-1 focus:ring-teal-500 text-slate-100 font-mono text-sm placeholder-slate-500 outline-none transition" />
+              <span class="absolute right-4 top-3.5 text-xs font-bold text-teal-400">GEN</span>
+            </div>
+            <p class="text-[11px] text-slate-500 mt-1.5">You can also create the record first and deposit subsequently in the manager.</p>
+          </div>
+
+          <button type="submit" id="btnSubmitCreate" class="w-full py-3.5 px-6 rounded-xl bg-gradient-to-r from-teal-500 to-emerald-600 hover:from-teal-400 hover:to-emerald-500 text-white font-semibold text-sm transition shadow-lg shadow-teal-500/20 flex items-center justify-center gap-2 cursor-pointer">
+            <i data-lucide="plus" class="w-4 h-4"></i>
+            <span>Create & Register Escrow</span>
+          </button>
+        </form>
+      </div>
+
+      <!-- Quick Guide Card -->
+      <div class="space-y-6">
+        <div class="glass-card rounded-2xl p-6 border border-slate-800 space-y-4">
+          <h3 class="text-base font-bold text-white flex items-center gap-2">
+            <i data-lucide="info" class="w-4 h-4 text-indigo-400"></i>
+            <span>Lifecycle Stages</span>
+          </h3>
+          <ul class="space-y-3 text-xs text-slate-300">
+            <li class="flex items-start gap-2.5">
+              <span class="w-5 h-5 rounded-full bg-slate-800 text-teal-400 flex items-center justify-center font-bold text-[10px] shrink-0">1</span>
+              <span><strong>Awaiting Deposit:</strong> Escrow ID is registered on-chain. Buyer deposits funds.</span>
+            </li>
+            <li class="flex items-start gap-2.5">
+              <span class="w-5 h-5 rounded-full bg-slate-800 text-teal-400 flex items-center justify-center font-bold text-[10px] shrink-0">2</span>
+              <span><strong>Delivered:</strong> Seller completes work and submits live deliverable URL or text proof.</span>
+            </li>
+            <li class="flex items-start gap-2.5">
+              <span class="w-5 h-5 rounded-full bg-slate-800 text-teal-400 flex items-center justify-center font-bold text-[10px] shrink-0">3</span>
+              <span><strong>Settlement:</strong> Buyer approves 100% release, or either party opens a dispute for AI arbitration.</span>
+            </li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 2: ESCROW MANAGER & LOOKUP -->
+    <section id="sectionManage" class="tab-content hidden space-y-6">
+      <div class="glass-card rounded-2xl p-6 border border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-4">
+        <div class="flex items-center gap-3 w-full sm:w-auto">
+          <i data-lucide="search" class="w-5 h-5 text-teal-400"></i>
+          <span class="text-sm font-semibold text-white">Lookup Specific Escrow Record</span>
+        </div>
+        <div class="flex items-center gap-2 w-full sm:w-auto">
+          <input type="number" id="lookupEscrowId" placeholder="Escrow ID (e.g. 0)" class="px-4 py-2 rounded-xl bg-slate-900/90 border border-slate-700/80 text-slate-100 font-mono text-sm w-full sm:w-48 outline-none focus:border-teal-500" />
+          <button id="btnLookup" class="px-4 py-2 rounded-xl bg-teal-600 hover:bg-teal-500 text-white text-sm font-medium transition shrink-0 cursor-pointer">
+            Fetch
+          </button>
+        </div>
+      </div>
+
+      <!-- Escrow Detail Card Display -->
+      <div id="escrowDisplayCard" class="glass-card rounded-2xl p-6 sm:p-8 border border-slate-800 space-y-6">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800 pb-5">
+          <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded-xl bg-slate-800 flex items-center justify-center font-mono font-bold text-teal-400">
+              #<span id="cardEscrowId">0</span>
+            </div>
+            <div>
+              <div class="flex items-center gap-2">
+                <h3 class="font-bold text-lg text-white">Escrow Agreement</h3>
+                <span id="badgeStatus" class="px-2.5 py-0.5 rounded-full text-xs font-bold font-mono bg-teal-500/10 text-teal-400 border border-teal-500/20">
+                  ESCROWED
+                </span>
+              </div>
+              <p class="text-xs text-slate-400">Bradbury Testnet Contract Instance</p>
+            </div>
+          </div>
+          <div class="text-right">
+            <div class="text-xs text-slate-400">Locked Escrow Value</div>
+            <div class="text-2xl font-extrabold text-white font-mono"><span id="cardAmount">1.0</span> <span class="text-teal-400 text-sm">GEN</span></div>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs font-mono">
+          <div class="p-3.5 rounded-xl bg-slate-900/60 border border-slate-800 space-y-1">
+            <span class="text-slate-500">Buyer Address:</span>
+            <div id="cardBuyerAddr" class="text-slate-200 truncate">0x0000000000000000000000000000000000000001</div>
+          </div>
+          <div class="p-3.5 rounded-xl bg-slate-900/60 border border-slate-800 space-y-1">
+            <span class="text-slate-500">Seller Address:</span>
+            <div id="cardSellerAddr" class="text-slate-200 truncate">0x0000000000000000000000000000000000000002</div>
+          </div>
+        </div>
+
+        <div class="space-y-2">
+          <label class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Contract Terms</label>
+          <div id="cardAgreementDesc" class="p-4 rounded-xl bg-slate-900/40 border border-slate-800 text-slate-300 text-sm leading-relaxed">
+            Complete news web scraper project in Python. Must export to clean JSON format.
+          </div>
+        </div>
+
+        <div class="space-y-2">
+          <label class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Submitted Delivery Proof</label>
+          <div id="cardDeliveryArtifact" class="p-4 rounded-xl bg-slate-900/40 border border-slate-800 font-mono text-sm text-teal-400 flex items-center justify-between">
+            <span id="textDeliveryArtifact">https://github.com/developer/news-scraper</span>
+            <a id="linkDeliveryArtifact" href="#" target="_blank" class="text-xs text-indigo-400 hover:underline flex items-center gap-1">
+              <span>Open Link</span>
+              <i data-lucide="external-link" class="w-3 h-3"></i>
+            </a>
+          </div>
+        </div>
+
+        <!-- Action Buttons -->
+        <div class="border-t border-slate-800 pt-6 grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <button id="btnApproveDelivery" class="py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-xs transition flex items-center justify-center gap-2 cursor-pointer">
+            <i data-lucide="check-circle" class="w-4 h-4"></i>
+            <span>Approve & Release Funds (Buyer)</span>
+          </button>
+          <button id="btnSubmitDeliveryModal" class="py-2.5 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-medium text-xs transition flex items-center justify-center gap-2 cursor-pointer">
+            <i data-lucide="upload-cloud" class="w-4 h-4"></i>
+            <span>Submit Delivery (Seller)</span>
+          </button>
+          <button id="btnRefundBuyer" class="py-2.5 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-medium text-xs transition flex items-center justify-center gap-2 cursor-pointer">
+            <i data-lucide="rotate-ccw" class="w-4 h-4"></i>
+            <span>Voluntary Refund (Seller)</span>
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 3: AI ARBITRATION HUB -->
+    <section id="sectionDispute" class="tab-content hidden space-y-8">
+      <div class="glass-card rounded-2xl p-6 sm:p-8 border border-slate-800 space-y-6">
+        <div class="flex items-center justify-between">
+          <div>
+            <h2 class="text-xl font-bold text-white flex items-center gap-2">
+              <i data-lucide="gavel" class="w-5 h-5 text-indigo-400"></i>
+              <span>Decentralized AI Dispute Arbitration</span>
+            </h2>
+            <p class="text-sm text-slate-400 mt-1">Bilateral statement submission protected by GenLayer Equivalence consensus.</p>
+          </div>
+          <span class="px-3 py-1 rounded-full text-xs font-mono font-bold bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+            RACE-PROTECTED
+          </span>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <!-- Buyer Dispute Box -->
+          <div class="glass-card rounded-xl p-5 border border-slate-800 space-y-3 bg-slate-900/60">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-bold uppercase tracking-wider text-slate-300">Buyer Statement</span>
+              <span id="statusBuyerDispute" class="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">READY</span>
+            </div>
+            <textarea id="inputBuyerStatement" rows="3" placeholder="Explain the defect, missing feature, or dispute from the buyer's perspective..." class="w-full px-3 py-2.5 rounded-lg bg-slate-900 border border-slate-700 text-xs text-slate-200 outline-none focus:border-indigo-500"></textarea>
+            <div class="flex items-center justify-between">
+              <button id="btnSubmitBuyerStatement" class="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium transition cursor-pointer">Submit Statement</button>
+              <button id="btnWaiveBuyerStatement" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-slate-200 text-xs font-medium transition cursor-pointer">Waive Response</button>
+            </div>
+          </div>
+
+          <!-- Seller Dispute Box -->
+          <div class="glass-card rounded-xl p-5 border border-slate-800 space-y-3 bg-slate-900/60">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-bold uppercase tracking-wider text-slate-300">Seller Statement</span>
+              <span id="statusSellerDispute" class="text-[10px] font-mono px-2 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">AWAITING</span>
+            </div>
+            <textarea id="inputSellerStatement" rows="3" placeholder="Explain your delivery fulfillment, compliance with specs, or counter-rebuttal..." class="w-full px-3 py-2.5 rounded-lg bg-slate-900 border border-slate-700 text-xs text-slate-200 outline-none focus:border-indigo-500"></textarea>
+            <div class="flex items-center justify-between">
+              <button id="btnSubmitSellerStatement" class="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium transition cursor-pointer">Submit Statement</button>
+              <button id="btnWaiveSellerStatement" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-slate-200 text-xs font-medium transition cursor-pointer">Waive Response</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Adjudicate Execution Panel -->
+        <div class="p-6 rounded-xl bg-gradient-to-r from-indigo-900/40 via-slate-900 to-teal-900/40 border border-indigo-500/30 space-y-4">
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+              <h4 class="font-bold text-white text-base flex items-center gap-2">
+                <i data-lucide="cpu" class="w-4 h-4 text-teal-400"></i>
+                <span>Trigger GenVM AI-Consensus Arbitration</span>
+              </h4>
+              <p class="text-xs text-slate-400 mt-0.5">Executes non-deterministic web crawl on delivery artifact + LLM judgment across validator nodes.</p>
+            </div>
+            <button id="btnRunAdjudication" class="px-6 py-3 rounded-xl bg-gradient-to-r from-indigo-600 to-teal-500 hover:from-indigo-500 hover:to-teal-400 text-white font-bold text-xs uppercase tracking-wider transition shadow-lg shadow-indigo-500/25 shrink-0 cursor-pointer flex items-center gap-2">
+              <i data-lucide="play" class="w-4 h-4"></i>
+              <span>Execute Adjudication</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Consensus Verdict Card -->
+        <div id="verdictCard" class="glass-card rounded-xl p-6 border border-emerald-500/30 bg-emerald-950/20 space-y-4">
+          <div class="flex items-center justify-between border-b border-emerald-500/20 pb-3">
+            <span class="text-xs font-bold font-mono uppercase text-emerald-400 flex items-center gap-1.5">
+              <i data-lucide="check-check" class="w-4 h-4"></i>
+              <span>AI Consensus Verdict Finalized</span>
+            </span>
+            <span class="text-xs text-slate-400 font-mono">Status: RESOLVED</span>
+          </div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 text-center">
+            <div class="p-3 rounded-lg bg-slate-900/80 border border-slate-800">
+              <div class="text-xs text-slate-400">Seller Allocation</div>
+              <div class="text-2xl font-extrabold text-teal-400 font-mono mt-1"><span id="verdictSellerPercent">60</span>%</div>
+            </div>
+            <div class="p-3 rounded-lg bg-slate-900/80 border border-slate-800">
+              <div class="text-xs text-slate-400">Buyer Refund</div>
+              <div class="text-2xl font-extrabold text-indigo-400 font-mono mt-1"><span id="verdictBuyerPercent">40</span>%</div>
+            </div>
+            <div class="p-3 rounded-lg bg-slate-900/80 border border-slate-800">
+              <div class="text-xs text-slate-400">Validator Agreement</div>
+              <div class="text-2xl font-extrabold text-emerald-400 font-mono mt-1">Strict Eq</div>
+            </div>
+          </div>
+
+          <div>
+            <span class="text-xs font-bold text-slate-400 uppercase">Arbitration Reasoning:</span>
+            <p id="verdictReasoning" class="text-xs text-slate-300 mt-1 leading-relaxed bg-slate-900/60 p-3.5 rounded-lg border border-slate-800">
+              "The seller delivered functional core modules and the scraped endpoint passes basic schema validation. However, unit test coverage was incomplete as specified in clause 2 of the agreement. Therefore, 60% allocated to seller and 40% refunded to buyer."
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Footer -->
+  <footer class="mt-auto border-t border-slate-800/80 py-6 text-center text-xs text-slate-500">
+    <div class="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2">
+      <div>ArbitratedEscrow &bull; GenLayer Intelligent Contracts &bull; Milestone 1 DApp</div>
+      <div class="flex items-center gap-4 text-slate-400">
+        <a href="https://github.com/earnadvise/genlayer-intelligent-escrow" target="_blank" class="hover:text-teal-400 transition">GitHub Repo</a>
+        <a href="https://explorer-bradbury.genlayer.com/address/0x27765327341E605F84493563A03Bf33d71ae0928" target="_blank" class="hover:text-teal-400 transition">Bradbury Explorer</a>
+      </div>
+    </div>
+  </footer>
+
+  <!-- App Logic -->
+  <script src="app.js"></script>
+</body>
+</html>

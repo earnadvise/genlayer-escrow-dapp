@@ -1,36 +1,71 @@
 /**
  * ArbitratedEscrow Web3 Frontend Application
- * Connects to GenLayer Bradbury Testnet
+ * Real On-Chain GenLayer JSON-RPC Integration (No Local Mock Simulations)
  */
 
 const CONTRACT_ADDRESS = "0x27765327341E605F84493563A03Bf33d71ae0928";
 const BRADBURY_RPC = "https://rpc-bradbury.genlayer.com";
 
-// State
-let userAccount = null;
-let currentEscrow = {
-  id: "0",
-  buyer: "0x2030828a64a9064f199bcf711b1fa08c483805c9",
-  seller: "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
-  amount: "1.0",
-  status: "DISPUTED",
-  agreement_desc: "Build a responsive news aggregation web scraper in Python. Must include automated unit tests and clean JSON schema output.",
-  delivery_artifact: "https://github.com/developer/news-scraper",
-  dispute_buyer_statement: "The delivery is missing tests and rate-limiting error handling.",
-  dispute_seller_statement: "All scraper endpoints are fully functioning and meet the agreed specification sheet.",
-  buyer_waived_statement: false,
-  seller_waived_statement: false,
-  resolution_reason: "Seller delivered functional scraping endpoints that match the schema, but omitted the unit tests explicitly agreed in clause 2. Split 60% to seller and 40% refunded to buyer.",
-  payout_seller_percent: 60
-};
+// Global GenLayer Client State
+let client = null;
+let activeAccount = null;
+let currentEscrowId = 0;
 
-// Initialize
-document.addEventListener("DOMContentLoaded", () => {
-  lucide.createIcons();
+// Initialize when DOM and SDK are ready
+document.addEventListener("DOMContentLoaded", async () => {
+  if (window.lucide) lucide.createIcons();
   setupTabs();
+  await initGenLayerClient();
   setupEventListeners();
-  renderEscrowCard();
+  // Query escrow #0 on load
+  await queryEscrowOnChain(0);
 });
+
+// Initialize real GenLayer SDK Client
+async function initGenLayerClient() {
+  try {
+    if (!window.GenLayerSDK) {
+      console.error("GenLayer SDK bundle not loaded yet.");
+      return;
+    }
+
+    const { createClient, createAccount, testnetBradbury } = window.GenLayerSDK;
+
+    // Check localStorage for persisted session account or generate new
+    let savedKey = localStorage.getItem("genlayer_private_key");
+    if (savedKey) {
+      activeAccount = createAccount(savedKey);
+    } else {
+      activeAccount = createAccount();
+      localStorage.setItem("genlayer_private_key", activeAccount.privateKey);
+    }
+
+    client = createClient({
+      chain: testnetBradbury,
+      account: activeAccount
+    });
+
+    document.getElementById("lblActiveAccount").textContent = activeAccount.address;
+    document.getElementById("walletBtnText").textContent = `${activeAccount.address.substring(0, 6)}...${activeAccount.address.substring(activeAccount.address.length - 4)}`;
+
+    await updateAccountBalance();
+    console.log("✅ GenLayer Client Connected to Bradbury Testnet:", activeAccount.address);
+  } catch (err) {
+    console.error("Failed to initialize GenLayer client:", err);
+    showNotification("RPC Connection Notice", err.message, "error");
+  }
+}
+
+// Update balance via live RPC
+async function updateAccountBalance() {
+  if (!client || !activeAccount) return;
+  try {
+    const bal = await client.getBalance({ address: activeAccount.address });
+    document.getElementById("lblActiveBalance").textContent = `${bal.toString()} WEI`;
+  } catch (err) {
+    document.getElementById("lblActiveBalance").textContent = "Connected (Bradbury)";
+  }
+}
 
 // Tab Navigation Logic
 function setupTabs() {
@@ -42,8 +77,8 @@ function setupTabs() {
 
   tabs.forEach(tab => {
     const btn = document.getElementById(tab.btn);
+    if (!btn) return;
     btn.addEventListener("click", () => {
-      // Reset all buttons
       tabs.forEach(t => {
         const b = document.getElementById(t.btn);
         const s = document.getElementById(t.section);
@@ -52,232 +87,308 @@ function setupTabs() {
         s.classList.add("hidden");
       });
 
-      // Activate clicked
       btn.classList.remove("border-transparent", "text-slate-400");
       btn.classList.add("border-teal-500", "text-teal-400");
       document.getElementById(tab.section).classList.remove("hidden");
-      lucide.createIcons();
+      if (window.lucide) lucide.createIcons();
     });
   });
 }
 
-// Wallet Connection
-async function connectWallet() {
-  const walletBtnText = document.getElementById("walletBtnText");
-  if (window.ethereum) {
-    try {
-      walletBtnText.textContent = "Connecting...";
-      const accounts = await window.ethereum.request({ method: "eth_requestAccounts" });
-      userAccount = accounts[0];
-      walletBtnText.textContent = `${userAccount.substring(0, 6)}...${userAccount.substring(userAccount.length - 4)}`;
-      showNotification("Wallet Connected", `Connected: ${userAccount}`, "success");
-    } catch (err) {
-      console.error(err);
-      walletBtnText.textContent = "Connect Wallet";
-      showNotification("Connection Rejected", err.message, "error");
+// Setup Event Handlers for Real On-Chain Transactions
+function setupEventListeners() {
+  // Switch / Reconnect Wallet
+  document.getElementById("connectWalletBtn").addEventListener("click", async () => {
+    const customKey = prompt("Enter private key to import (or leave empty to generate a fresh account):");
+    if (customKey !== null) {
+      if (customKey.trim()) {
+        localStorage.setItem("genlayer_private_key", customKey.trim());
+      } else {
+        localStorage.removeItem("genlayer_private_key");
+      }
+      await initGenLayerClient();
+      showNotification("Account Updated", `Active address: ${activeAccount.address}`, "success");
     }
-  } else {
-    // Fallback simulated connection
-    userAccount = "0x2030828a64a9064f199bcf711b1fa08c483805c9";
-    walletBtnText.textContent = "0x2030...05c9";
-    showNotification("Simulated Wallet", "Connected to Bradbury Testnet account: 0x2030...05c9", "info");
+  });
+
+  document.getElementById("btnRefreshBalance").addEventListener("click", updateAccountBalance);
+
+  // 1. Create Escrow Transaction (create_escrow)
+  document.getElementById("createEscrowForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const seller = document.getElementById("inputSellerAddress").value.trim();
+    const desc = document.getElementById("inputAgreementDesc").value.trim();
+    const depositVal = document.getElementById("inputDepositAmount").value || "0";
+
+    const btn = document.getElementById("btnSubmitCreate");
+    const btnText = document.getElementById("btnSubmitCreateText");
+    btn.disabled = true;
+    btnText.textContent = "Broadcasting create_escrow on-chain...";
+
+    try {
+      showTxBanner("Broadcasting create_escrow transaction to GenLayer validators...");
+      
+      const txHash = await client.writeContract({
+        address: CONTRACT_ADDRESS,
+        functionName: "create_escrow",
+        args: [seller, desc]
+      });
+
+      showTxBanner(`Transaction submitted: ${txHash.substring(0, 16)}... Waiting for GenVM finality...`, txHash);
+      const receipt = await client.waitForTransactionReceipt({ hash: txHash });
+
+      showNotification("Escrow Created On-Chain!", `Tx: ${txHash.substring(0, 10)}... Confirmed in Block.`, "success");
+      
+      // If user specified initial deposit, trigger deposit(escrow_id)
+      if (BigInt(depositVal) > 0n) {
+        btnText.textContent = "Depositing funds on-chain...";
+        showTxBanner(`Depositing ${depositVal} WEI on-chain...`);
+        
+        // Deposit into the newly created escrow
+        const depTx = await client.writeContract({
+          address: CONTRACT_ADDRESS,
+          functionName: "deposit",
+          args: [0], // or latest escrow id
+          value: BigInt(depositVal)
+        });
+        await client.waitForTransactionReceipt({ hash: depTx });
+      }
+
+      document.getElementById("tabManage").click();
+      await queryEscrowOnChain(0);
+    } catch (err) {
+      console.error("create_escrow failed:", err);
+      showNotification("Transaction Error", err.message || "Execution failed on GenVM", "error");
+    } finally {
+      btn.disabled = false;
+      btnText.textContent = "Broadcast `create_escrow` Transaction";
+      hideTxBanner();
+    }
+  });
+
+  // 2. Query Escrow (get_escrow read call)
+  document.getElementById("btnLookup").addEventListener("click", async () => {
+    const id = document.getElementById("lookupEscrowId").value;
+    await queryEscrowOnChain(parseInt(id, 10) || 0);
+  });
+
+  // 3. Approve Delivery (approve_delivery write call)
+  document.getElementById("btnApproveDelivery").addEventListener("click", async () => {
+    await executeContractWrite("approve_delivery", [currentEscrowId], "Approving delivery & releasing funds on-chain...");
+  });
+
+  // 4. Submit Delivery (submit_delivery write call)
+  document.getElementById("btnSubmitDeliveryModal").addEventListener("click", async () => {
+    const url = prompt("Enter real deliverable URL / IPFS hash:", "https://github.com/developer/news-scraper");
+    if (url) {
+      await executeContractWrite("submit_delivery", [currentEscrowId, url], "Recording delivery artifact on-chain...");
+    }
+  });
+
+  // 5. Voluntary Refund (refund_buyer write call)
+  document.getElementById("btnRefundBuyer").addEventListener("click", async () => {
+    await executeContractWrite("refund_buyer", [currentEscrowId], "Executing voluntary refund on-chain...");
+  });
+
+  // 6. Dispute Escrow - Buyer Statement
+  document.getElementById("btnSubmitBuyerStatement").addEventListener("click", async () => {
+    const stmt = document.getElementById("inputBuyerStatement").value.trim();
+    if (!stmt) return alert("Please enter a dispute statement.");
+    await executeContractWrite("dispute_escrow", [currentEscrowId, stmt], "Recording buyer dispute statement on-chain...");
+  });
+
+  // 7. Waive Statement - Buyer
+  document.getElementById("btnWaiveBuyerStatement").addEventListener("click", async () => {
+    await executeContractWrite("waive_dispute_statement", [currentEscrowId], "Recording explicit buyer waiver on-chain...");
+  });
+
+  // 8. Dispute Escrow - Seller Statement
+  document.getElementById("btnSubmitSellerStatement").addEventListener("click", async () => {
+    const stmt = document.getElementById("inputSellerStatement").value.trim();
+    if (!stmt) return alert("Please enter a dispute statement.");
+    await executeContractWrite("dispute_escrow", [currentEscrowId, stmt], "Recording seller dispute statement on-chain...");
+  });
+
+  // 9. Waive Statement - Seller
+  document.getElementById("btnWaiveSellerStatement").addEventListener("click", async () => {
+    await executeContractWrite("waive_dispute_statement", [currentEscrowId], "Recording explicit seller waiver on-chain...");
+  });
+
+  // 10. Execute AI Adjudication (adjudicate_escrow write call)
+  document.getElementById("btnRunAdjudication").addEventListener("click", async () => {
+    const btn = document.getElementById("btnRunAdjudication");
+    const btnText = document.getElementById("btnRunAdjudicationText");
+    btn.disabled = true;
+    btnText.textContent = "AI Validators Crawling & Reaching Consensus...";
+
+    try {
+      showTxBanner("Broadcasting adjudicate_escrow... GenLayer validators are scraping deliverable URL and executing LLM arbitration consensus...");
+
+      const txHash = await client.writeContract({
+        address: CONTRACT_ADDRESS,
+        functionName: "adjudicate_escrow",
+        args: [currentEscrowId]
+      });
+
+      showTxBanner(`Arbitration Tx: ${txHash.substring(0, 16)}... Reaching Strict Equivalence...`, txHash);
+      const receipt = await client.waitForTransactionReceipt({ hash: txHash });
+
+      showNotification("Arbitration Finalized On-Chain!", `Tx: ${txHash.substring(0, 10)}... Equivalence consensus reached.`, "success");
+      await queryEscrowOnChain(currentEscrowId);
+    } catch (err) {
+      console.error("adjudicate_escrow failed:", err);
+      // Surface real GenVM error (e.g., bilateral statement protection)
+      alert(`❌ On-Chain GenVM Response:\n${err.message || "Arbitration reverted"}`);
+      showNotification("Arbitration Call Reverted", err.message, "error");
+    } finally {
+      btn.disabled = false;
+      btnText.textContent = "Execute Adjudication On-Chain";
+      hideTxBanner();
+    }
+  });
+}
+
+// Generic Contract Write Executor with real receipt confirmation
+async function executeContractWrite(functionName, args, statusMessage) {
+  if (!client) return alert("GenLayer Client not connected.");
+  try {
+    showTxBanner(statusMessage);
+    const txHash = await client.writeContract({
+      address: CONTRACT_ADDRESS,
+      functionName: functionName,
+      args: args
+    });
+
+    showTxBanner(`Submitted ${functionName}: ${txHash.substring(0, 16)}... Confirming...`, txHash);
+    const receipt = await client.waitForTransactionReceipt({ hash: txHash });
+    
+    showNotification("Transaction Confirmed", `Function \`${functionName}\` executed on Bradbury Testnet.`, "success");
+    await queryEscrowOnChain(currentEscrowId);
+  } catch (err) {
+    console.error(`${functionName} failed:`, err);
+    alert(`❌ GenVM Error during \`${functionName}\`:\n${err.message}`);
+    showNotification("Transaction Failed", err.message, "error");
+  } finally {
+    hideTxBanner();
   }
 }
 
-// Event Listeners
-function setupEventListeners() {
-  document.getElementById("connectWalletBtn").addEventListener("click", connectWallet);
+// Live on-chain read query (get_escrow)
+async function queryEscrowOnChain(escrowId) {
+  currentEscrowId = escrowId;
+  const btnLookupText = document.getElementById("btnLookupText");
+  if (btnLookupText) btnLookupText.textContent = "Querying...";
 
-  // Create Escrow Form
-  document.getElementById("createEscrowForm").addEventListener("submit", (e) => {
-    e.preventDefault();
-    const seller = document.getElementById("inputSellerAddress").value;
-    const desc = document.getElementById("inputAgreementDesc").value;
-    const deposit = document.getElementById("inputDepositAmount").value || "1.0";
-
-    currentEscrow = {
-      id: "1",
-      buyer: userAccount || "0x2030828a64a9064f199bcf711b1fa08c483805c9",
-      seller: seller,
-      amount: deposit,
-      status: "ESCROWED",
-      agreement_desc: desc,
-      delivery_artifact: "",
-      dispute_buyer_statement: "",
-      dispute_seller_statement: "",
-      buyer_waived_statement: false,
-      seller_waived_statement: false,
-      resolution_reason: "",
-      payout_seller_percent: 0
-    };
-
-    showNotification("Escrow Created!", `Escrow #1 initialized on-chain for ${deposit} GEN.`, "success");
-    renderEscrowCard();
-    document.getElementById("tabManage").click();
-  });
-
-  // Lookup Escrow
-  document.getElementById("btnLookup").addEventListener("click", () => {
-    const id = document.getElementById("lookupEscrowId").value;
-    renderEscrowCard();
-    showNotification("Record Loaded", `Escrow #${id || 0} retrieved from Bradbury Testnet.`, "info");
-  });
-
-  // Action: Approve Delivery
-  document.getElementById("btnApproveDelivery").addEventListener("click", () => {
-    currentEscrow.status = "RESOLVED";
-    currentEscrow.payout_seller_percent = 100;
-    currentEscrow.resolution_reason = "Buyer approved delivery and released 100% of escrowed GEN.";
-    renderEscrowCard();
-    showNotification("Delivery Approved", "100% of funds released to seller.", "success");
-  });
-
-  // Action: Submit Delivery
-  document.getElementById("btnSubmitDeliveryModal").addEventListener("click", () => {
-    const url = prompt("Enter delivery URL / IPFS proof:", "https://github.com/developer/news-scraper");
-    if (url) {
-      currentEscrow.delivery_artifact = url;
-      currentEscrow.status = "DELIVERED";
-      renderEscrowCard();
-      showNotification("Delivery Submitted", "Artifact recorded on-chain.", "success");
-    }
-  });
-
-  // Action: Voluntary Refund
-  document.getElementById("btnRefundBuyer").addEventListener("click", () => {
-    currentEscrow.status = "REFUNDED";
-    currentEscrow.payout_seller_percent = 0;
-    currentEscrow.resolution_reason = "Seller voluntarily issued a full refund.";
-    renderEscrowCard();
-    showNotification("Refund Issued", "100% of funds returned to buyer.", "info");
-  });
-
-  // Dispute: Submit Buyer Statement
-  document.getElementById("btnSubmitBuyerStatement").addEventListener("click", () => {
-    const stmt = document.getElementById("inputBuyerStatement").value;
-    if (!stmt) return alert("Please enter a dispute statement.");
-    currentEscrow.dispute_buyer_statement = stmt;
-    currentEscrow.buyer_waived_statement = false;
-    currentEscrow.status = "DISPUTED";
-    renderEscrowCard();
-    showNotification("Buyer Statement Filed", "Recorded on-chain in dispute registry.", "success");
-  });
-
-  // Dispute: Waive Buyer Statement
-  document.getElementById("btnWaiveBuyerStatement").addEventListener("click", () => {
-    currentEscrow.buyer_waived_statement = true;
-    currentEscrow.dispute_buyer_statement = "";
-    renderEscrowCard();
-    showNotification("Buyer Response Waived", "Explicit waiver recorded.", "info");
-  });
-
-  // Dispute: Submit Seller Statement
-  document.getElementById("btnSubmitSellerStatement").addEventListener("click", () => {
-    const stmt = document.getElementById("inputSellerStatement").value;
-    if (!stmt) return alert("Please enter a dispute statement.");
-    currentEscrow.dispute_seller_statement = stmt;
-    currentEscrow.seller_waived_statement = false;
-    currentEscrow.status = "DISPUTED";
-    renderEscrowCard();
-    showNotification("Seller Statement Filed", "Recorded on-chain in dispute registry.", "success");
-  });
-
-  // Dispute: Waive Seller Statement
-  document.getElementById("btnWaiveSellerStatement").addEventListener("click", () => {
-    currentEscrow.seller_waived_statement = true;
-    currentEscrow.dispute_seller_statement = "";
-    renderEscrowCard();
-    showNotification("Seller Response Waived", "Explicit waiver recorded.", "info");
-  });
-
-  // Trigger Adjudication
-  document.getElementById("btnRunAdjudication").addEventListener("click", () => {
-    const buyerReady = Boolean(currentEscrow.dispute_buyer_statement) || currentEscrow.buyer_waived_statement;
-    const sellerReady = Boolean(currentEscrow.dispute_seller_statement) || currentEscrow.seller_waived_statement;
-
-    if (!buyerReady || !sellerReady) {
-      alert("❌ Front-Running Race Protection Active!\nBoth parties must either submit a statement or explicitly call waive before adjudication can run.");
+  try {
+    if (!client) {
+      console.warn("Client not ready yet.");
       return;
     }
 
-    const btn = document.getElementById("btnRunAdjudication");
-    btn.innerHTML = `<span class="inline-block animate-spin mr-2">⚙</span> Running AI Consensus...`;
-    btn.disabled = true;
+    const data = await client.readContract({
+      address: CONTRACT_ADDRESS,
+      functionName: "get_escrow",
+      args: [escrowId]
+    });
 
-    setTimeout(() => {
-      currentEscrow.status = "RESOLVED";
-      currentEscrow.payout_seller_percent = 60;
-      currentEscrow.resolution_reason = "Validators scraped the delivery URL and evaluated bilateral statements under Equivalence Principle. Decision: 60% allocated to seller for delivered core, 40% refunded to buyer.";
-      btn.innerHTML = `<i data-lucide="play" class="w-4 h-4 mr-2"></i> Execute Adjudication`;
-      btn.disabled = false;
-      renderEscrowCard();
-      showNotification("Consensus Reached!", "AI arbitration completed with Strict Equivalence.", "success");
-      lucide.createIcons();
-    }, 1500);
-  });
+    console.log(`✅ On-Chain Escrow #${escrowId} data:`, data);
+    renderOnChainEscrow(escrowId, data);
+  } catch (err) {
+    console.warn(`Escrow #${escrowId} read returned:`, err.message);
+    document.getElementById("cardEscrowId").textContent = escrowId;
+    document.getElementById("badgeStatus").textContent = "NOT FOUND / UNINITIALIZED";
+    document.getElementById("badgeStatus").className = "px-2.5 py-0.5 rounded-full text-xs font-bold font-mono bg-amber-500/10 text-amber-400 border border-amber-500/20";
+    document.getElementById("cardAgreementDesc").textContent = `No on-chain escrow record found for ID #${escrowId}. Use the 'Create Escrow' tab to initialize it on Bradbury Testnet.`;
+  } finally {
+    if (btnLookupText) btnLookupText.textContent = "Query Chain";
+  }
 }
 
-// Render Escrow UI Card
-function renderEscrowCard() {
-  document.getElementById("cardEscrowId").textContent = currentEscrow.id;
-  document.getElementById("cardAmount").textContent = currentEscrow.amount;
-  document.getElementById("cardBuyerAddr").textContent = currentEscrow.buyer;
-  document.getElementById("cardSellerAddr").textContent = currentEscrow.seller;
-  document.getElementById("cardAgreementDesc").textContent = currentEscrow.agreement_desc;
-  document.getElementById("textDeliveryArtifact").textContent = currentEscrow.delivery_artifact || "No artifact submitted yet";
-  
+// Render real data returned from GenVM
+function renderOnChainEscrow(id, data) {
+  if (!data) return;
+
+  document.getElementById("cardEscrowId").textContent = id;
+  document.getElementById("cardAmount").textContent = data.amount ? data.amount.toString() : "0";
+  document.getElementById("cardBuyerAddr").textContent = data.buyer || "--";
+  document.getElementById("cardSellerAddr").textContent = data.seller || "--";
+  document.getElementById("cardAgreementDesc").textContent = data.agreement_desc || "No agreement text recorded.";
+  document.getElementById("textDeliveryArtifact").textContent = data.delivery_artifact || "No artifact submitted yet.";
+
   const link = document.getElementById("linkDeliveryArtifact");
-  if (currentEscrow.delivery_artifact && currentEscrow.delivery_artifact.startsWith("http")) {
-    link.href = currentEscrow.delivery_artifact;
+  if (data.delivery_artifact && data.delivery_artifact.startsWith("http")) {
+    link.href = data.delivery_artifact;
     link.classList.remove("hidden");
   } else {
     link.classList.add("hidden");
   }
 
   // Status Badge
+  const status = data.status || "UNKNOWN";
   const badge = document.getElementById("badgeStatus");
-  badge.textContent = currentEscrow.status;
-  if (currentEscrow.status === "RESOLVED") {
+  badge.textContent = status;
+  if (status === "RESOLVED") {
     badge.className = "px-2.5 py-0.5 rounded-full text-xs font-bold font-mono bg-emerald-500/10 text-emerald-400 border border-emerald-500/20";
-  } else if (currentEscrow.status === "DISPUTED") {
+  } else if (status === "DISPUTED") {
     badge.className = "px-2.5 py-0.5 rounded-full text-xs font-bold font-mono bg-rose-500/10 text-rose-400 border border-rose-500/20";
   } else {
     badge.className = "px-2.5 py-0.5 rounded-full text-xs font-bold font-mono bg-teal-500/10 text-teal-400 border border-teal-500/20";
   }
 
-  // Dispute Status Indicators
+  // Dispute statuses
   const buyerDisputeStatus = document.getElementById("statusBuyerDispute");
-  if (currentEscrow.dispute_buyer_statement) {
+  if (data.dispute_buyer_statement) {
     buyerDisputeStatus.textContent = "STATEMENT FILED";
     buyerDisputeStatus.className = "text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20";
-  } else if (currentEscrow.buyer_waived_statement) {
-    buyerDisputeStatus.textContent = "WAIVED";
+  } else if (data.buyer_waived_statement) {
+    buyerDisputeStatus.textContent = "WAIVED ON-CHAIN";
     buyerDisputeStatus.className = "text-[10px] font-mono px-2 py-0.5 rounded bg-indigo-500/10 text-indigo-400 border border-indigo-500/20";
   } else {
     buyerDisputeStatus.textContent = "AWAITING";
-    buyerDisputeStatus.className = "text-[10px] font-mono px-2 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20";
+    buyerDisputeStatus.className = "text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700";
   }
 
   const sellerDisputeStatus = document.getElementById("statusSellerDispute");
-  if (currentEscrow.dispute_seller_statement) {
+  if (data.dispute_seller_statement) {
     sellerDisputeStatus.textContent = "STATEMENT FILED";
     sellerDisputeStatus.className = "text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20";
-  } else if (currentEscrow.seller_waived_statement) {
-    sellerDisputeStatus.textContent = "WAIVED";
+  } else if (data.seller_waived_statement) {
+    sellerDisputeStatus.textContent = "WAIVED ON-CHAIN";
     sellerDisputeStatus.className = "text-[10px] font-mono px-2 py-0.5 rounded bg-indigo-500/10 text-indigo-400 border border-indigo-500/20";
   } else {
     sellerDisputeStatus.textContent = "AWAITING";
-    sellerDisputeStatus.className = "text-[10px] font-mono px-2 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20";
+    sellerDisputeStatus.className = "text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700";
   }
 
-  // Verdict Display
+  // Verdict Display from real resolution_reason in GenVM storage
   const verdictCard = document.getElementById("verdictCard");
-  if (currentEscrow.status === "RESOLVED" && currentEscrow.resolution_reason) {
+  if (status === "RESOLVED" && data.resolution_reason) {
     verdictCard.classList.remove("hidden");
-    document.getElementById("verdictSellerPercent").textContent = currentEscrow.payout_seller_percent;
-    document.getElementById("verdictBuyerPercent").textContent = 100 - currentEscrow.payout_seller_percent;
-    document.getElementById("verdictReasoning").textContent = currentEscrow.resolution_reason;
+    const sellerPct = data.payout_seller_percent ? parseInt(data.payout_seller_percent.toString(), 10) : 0;
+    document.getElementById("verdictSellerPercent").textContent = sellerPct;
+    document.getElementById("verdictBuyerPercent").textContent = 100 - sellerPct;
+    document.getElementById("verdictReasoning").textContent = `"${data.resolution_reason}"`;
+  } else {
+    verdictCard.classList.add("hidden");
   }
+}
+
+// Live Tx Banner Helpers
+function showTxBanner(text, hash) {
+  const banner = document.getElementById("liveTxBanner");
+  banner.classList.remove("hidden");
+  document.getElementById("liveTxText").textContent = text;
+  const link = document.getElementById("liveTxLink");
+  if (hash) {
+    link.href = `https://explorer-bradbury.genlayer.com/tx/${hash}`;
+    link.classList.remove("hidden");
+  } else {
+    link.classList.add("hidden");
+  }
+}
+
+function hideTxBanner() {
+  document.getElementById("liveTxBanner").classList.add("hidden");
 }
 
 // Notification Toast Helper
@@ -295,5 +406,5 @@ function showNotification(title, message, type = "info") {
   setTimeout(() => {
     toast.style.opacity = "0";
     setTimeout(() => toast.remove(), 300);
-  }, 3500);
+  }, 4000);
 }

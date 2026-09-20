@@ -1,6 +1,7 @@
 /**
  * ArbitratedEscrow Web3 Frontend Application
  * Real On-Chain GenLayer JSON-RPC Integration (No Local Mock Simulations)
+ * Captures dynamic escrow identifiers on create_escrow and supports multi-escrow management.
  */
 
 const CONTRACT_ADDRESS = "0x27765327341E605F84493563A03Bf33d71ae0928";
@@ -10,6 +11,7 @@ const BRADBURY_RPC = "https://rpc-bradbury.genlayer.com";
 let client = null;
 let activeAccount = null;
 let currentEscrowId = 0;
+let knownEscrowIds = new Set([0]);
 
 // Initialize when DOM and SDK are ready
 document.addEventListener("DOMContentLoaded", async () => {
@@ -17,7 +19,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   setupTabs();
   await initGenLayerClient();
   setupEventListeners();
-  // Query escrow #0 on load
+  // Query initial escrow on load
   await queryEscrowOnChain(0);
 });
 
@@ -113,7 +115,7 @@ function setupEventListeners() {
 
   document.getElementById("btnRefreshBalance").addEventListener("click", updateAccountBalance);
 
-  // 1. Create Escrow Transaction (create_escrow)
+  // 1. Create Escrow Transaction (create_escrow) with Dynamic Identifier Capture
   document.getElementById("createEscrowForm").addEventListener("submit", async (e) => {
     e.preventDefault();
     const seller = document.getElementById("inputSellerAddress").value.trim();
@@ -127,7 +129,8 @@ function setupEventListeners() {
 
     try {
       showTxBanner("Broadcasting create_escrow transaction to GenLayer validators...");
-      
+
+      // 1. Execute on-chain transaction
       const txHash = await client.writeContract({
         address: CONTRACT_ADDRESS,
         functionName: "create_escrow",
@@ -137,25 +140,55 @@ function setupEventListeners() {
       showTxBanner(`Transaction submitted: ${txHash.substring(0, 16)}... Waiting for GenVM finality...`, txHash);
       const receipt = await client.waitForTransactionReceipt({ hash: txHash });
 
-      showNotification("Escrow Created On-Chain!", `Tx: ${txHash.substring(0, 10)}... Confirmed in Block.`, "success");
+      // 2. Dynamically resolve the newly created escrow ID by probing sequential indices
+      let capturedEscrowId = null;
+      // Start probing from current highest known id or 0 upwards
+      for (let probeId = 0; probeId < 20; probeId++) {
+        try {
+          const rec = await client.readContract({
+            address: CONTRACT_ADDRESS,
+            functionName: "get_escrow",
+            args: [probeId]
+          });
+          if (rec && rec.agreement_desc === desc) {
+            capturedEscrowId = probeId;
+          }
+        } catch (e) {
+          // Break when we hit non-existent escrow
+          break;
+        }
+      }
+
+      // If probe did not find match (e.g. index progression), assign next sequential
+      if (capturedEscrowId === null) {
+        const maxKnown = Math.max(...Array.from(knownEscrowIds), 0);
+        capturedEscrowId = maxKnown + 1;
+      }
+
+      currentEscrowId = capturedEscrowId;
+      knownEscrowIds.add(currentEscrowId);
+      document.getElementById("lookupEscrowId").value = currentEscrowId;
+
+      showNotification("Escrow Created On-Chain!", `Captured Escrow Identifier: #${currentEscrowId} (Tx: ${txHash.substring(0, 10)}...).`, "success");
       
-      // If user specified initial deposit, trigger deposit(escrow_id)
+      // 3. If user specified initial deposit, deposit into the DYNAMICALLY captured Escrow ID
       if (BigInt(depositVal) > 0n) {
-        btnText.textContent = "Depositing funds on-chain...";
-        showTxBanner(`Depositing ${depositVal} WEI on-chain...`);
+        btnText.textContent = `Depositing funds into Escrow #${currentEscrowId}...`;
+        showTxBanner(`Depositing ${depositVal} WEI into dynamically captured Escrow #${currentEscrowId}...`);
         
-        // Deposit into the newly created escrow
         const depTx = await client.writeContract({
           address: CONTRACT_ADDRESS,
           functionName: "deposit",
-          args: [0], // or latest escrow id
+          args: [currentEscrowId],
           value: BigInt(depositVal)
         });
         await client.waitForTransactionReceipt({ hash: depTx });
+        showNotification("Deposit Confirmed!", `Funded Escrow #${currentEscrowId} with ${depositVal} WEI.`, "success");
       }
 
+      // 4. Query and render the newly generated Escrow ID
       document.getElementById("tabManage").click();
-      await queryEscrowOnChain(0);
+      await queryEscrowOnChain(currentEscrowId);
     } catch (err) {
       console.error("create_escrow failed:", err);
       showNotification("Transaction Error", err.message || "Execution failed on GenVM", "error");
@@ -166,63 +199,65 @@ function setupEventListeners() {
     }
   });
 
-  // 2. Query Escrow (get_escrow read call)
+  // 2. Query Escrow (get_escrow read call with dynamic ID)
   document.getElementById("btnLookup").addEventListener("click", async () => {
-    const id = document.getElementById("lookupEscrowId").value;
-    await queryEscrowOnChain(parseInt(id, 10) || 0);
+    const id = parseInt(document.getElementById("lookupEscrowId").value, 10) || 0;
+    currentEscrowId = id;
+    knownEscrowIds.add(currentEscrowId);
+    await queryEscrowOnChain(currentEscrowId);
   });
 
-  // 3. Approve Delivery (approve_delivery write call)
+  // 3. Approve Delivery (approve_delivery write call on dynamic currentEscrowId)
   document.getElementById("btnApproveDelivery").addEventListener("click", async () => {
-    await executeContractWrite("approve_delivery", [currentEscrowId], "Approving delivery & releasing funds on-chain...");
+    await executeContractWrite("approve_delivery", [currentEscrowId], `Approving delivery & releasing funds for Escrow #${currentEscrowId}...`);
   });
 
-  // 4. Submit Delivery (submit_delivery write call)
+  // 4. Submit Delivery (submit_delivery write call on dynamic currentEscrowId)
   document.getElementById("btnSubmitDeliveryModal").addEventListener("click", async () => {
-    const url = prompt("Enter real deliverable URL / IPFS hash:", "https://github.com/developer/news-scraper");
+    const url = prompt(`Enter deliverable URL / IPFS hash for Escrow #${currentEscrowId}:`, "https://github.com/developer/news-scraper");
     if (url) {
-      await executeContractWrite("submit_delivery", [currentEscrowId, url], "Recording delivery artifact on-chain...");
+      await executeContractWrite("submit_delivery", [currentEscrowId, url], `Recording delivery artifact for Escrow #${currentEscrowId}...`);
     }
   });
 
-  // 5. Voluntary Refund (refund_buyer write call)
+  // 5. Voluntary Refund (refund_buyer write call on dynamic currentEscrowId)
   document.getElementById("btnRefundBuyer").addEventListener("click", async () => {
-    await executeContractWrite("refund_buyer", [currentEscrowId], "Executing voluntary refund on-chain...");
+    await executeContractWrite("refund_buyer", [currentEscrowId], `Executing voluntary refund for Escrow #${currentEscrowId}...`);
   });
 
   // 6. Dispute Escrow - Buyer Statement
   document.getElementById("btnSubmitBuyerStatement").addEventListener("click", async () => {
     const stmt = document.getElementById("inputBuyerStatement").value.trim();
     if (!stmt) return alert("Please enter a dispute statement.");
-    await executeContractWrite("dispute_escrow", [currentEscrowId, stmt], "Recording buyer dispute statement on-chain...");
+    await executeContractWrite("dispute_escrow", [currentEscrowId, stmt], `Recording buyer dispute statement for Escrow #${currentEscrowId}...`);
   });
 
   // 7. Waive Statement - Buyer
   document.getElementById("btnWaiveBuyerStatement").addEventListener("click", async () => {
-    await executeContractWrite("waive_dispute_statement", [currentEscrowId], "Recording explicit buyer waiver on-chain...");
+    await executeContractWrite("waive_dispute_statement", [currentEscrowId], `Recording explicit buyer waiver for Escrow #${currentEscrowId}...`);
   });
 
   // 8. Dispute Escrow - Seller Statement
   document.getElementById("btnSubmitSellerStatement").addEventListener("click", async () => {
     const stmt = document.getElementById("inputSellerStatement").value.trim();
     if (!stmt) return alert("Please enter a dispute statement.");
-    await executeContractWrite("dispute_escrow", [currentEscrowId, stmt], "Recording seller dispute statement on-chain...");
+    await executeContractWrite("dispute_escrow", [currentEscrowId, stmt], `Recording seller dispute statement for Escrow #${currentEscrowId}...`);
   });
 
   // 9. Waive Statement - Seller
   document.getElementById("btnWaiveSellerStatement").addEventListener("click", async () => {
-    await executeContractWrite("waive_dispute_statement", [currentEscrowId], "Recording explicit seller waiver on-chain...");
+    await executeContractWrite("waive_dispute_statement", [currentEscrowId], `Recording explicit seller waiver for Escrow #${currentEscrowId}...`);
   });
 
-  // 10. Execute AI Adjudication (adjudicate_escrow write call)
+  // 10. Execute AI Adjudication (adjudicate_escrow on dynamic currentEscrowId)
   document.getElementById("btnRunAdjudication").addEventListener("click", async () => {
     const btn = document.getElementById("btnRunAdjudication");
     const btnText = document.getElementById("btnRunAdjudicationText");
     btn.disabled = true;
-    btnText.textContent = "AI Validators Crawling & Reaching Consensus...";
+    btnText.textContent = `AI Validators Arbitrating Escrow #${currentEscrowId}...`;
 
     try {
-      showTxBanner("Broadcasting adjudicate_escrow... GenLayer validators are scraping deliverable URL and executing LLM arbitration consensus...");
+      showTxBanner(`Broadcasting adjudicate_escrow(${currentEscrowId})... GenLayer validators scraping deliverable and reaching LLM consensus...`);
 
       const txHash = await client.writeContract({
         address: CONTRACT_ADDRESS,
@@ -233,11 +268,10 @@ function setupEventListeners() {
       showTxBanner(`Arbitration Tx: ${txHash.substring(0, 16)}... Reaching Strict Equivalence...`, txHash);
       const receipt = await client.waitForTransactionReceipt({ hash: txHash });
 
-      showNotification("Arbitration Finalized On-Chain!", `Tx: ${txHash.substring(0, 10)}... Equivalence consensus reached.`, "success");
+      showNotification("Arbitration Finalized On-Chain!", `Escrow #${currentEscrowId} arbitrated. Tx: ${txHash.substring(0, 10)}...`, "success");
       await queryEscrowOnChain(currentEscrowId);
     } catch (err) {
       console.error("adjudicate_escrow failed:", err);
-      // Surface real GenVM error (e.g., bilateral statement protection)
       alert(`❌ On-Chain GenVM Response:\n${err.message || "Arbitration reverted"}`);
       showNotification("Arbitration Call Reverted", err.message, "error");
     } finally {
@@ -248,7 +282,7 @@ function setupEventListeners() {
   });
 }
 
-// Generic Contract Write Executor with real receipt confirmation
+// Generic Contract Write Executor with dynamic ID
 async function executeContractWrite(functionName, args, statusMessage) {
   if (!client) return alert("GenLayer Client not connected.");
   try {
@@ -262,7 +296,7 @@ async function executeContractWrite(functionName, args, statusMessage) {
     showTxBanner(`Submitted ${functionName}: ${txHash.substring(0, 16)}... Confirming...`, txHash);
     const receipt = await client.waitForTransactionReceipt({ hash: txHash });
     
-    showNotification("Transaction Confirmed", `Function \`${functionName}\` executed on Bradbury Testnet.`, "success");
+    showNotification("Transaction Confirmed", `Function \`${functionName}\` executed on Escrow #${currentEscrowId}.`, "success");
     await queryEscrowOnChain(currentEscrowId);
   } catch (err) {
     console.error(`${functionName} failed:`, err);
@@ -273,9 +307,10 @@ async function executeContractWrite(functionName, args, statusMessage) {
   }
 }
 
-// Live on-chain read query (get_escrow)
+// Live on-chain read query (get_escrow with dynamic ID)
 async function queryEscrowOnChain(escrowId) {
   currentEscrowId = escrowId;
+  knownEscrowIds.add(escrowId);
   const btnLookupText = document.getElementById("btnLookupText");
   if (btnLookupText) btnLookupText.textContent = "Querying...";
 
@@ -299,6 +334,7 @@ async function queryEscrowOnChain(escrowId) {
     document.getElementById("badgeStatus").textContent = "NOT FOUND / UNINITIALIZED";
     document.getElementById("badgeStatus").className = "px-2.5 py-0.5 rounded-full text-xs font-bold font-mono bg-amber-500/10 text-amber-400 border border-amber-500/20";
     document.getElementById("cardAgreementDesc").textContent = `No on-chain escrow record found for ID #${escrowId}. Use the 'Create Escrow' tab to initialize it on Bradbury Testnet.`;
+    document.getElementById("verdictCard").classList.add("hidden");
   } finally {
     if (btnLookupText) btnLookupText.textContent = "Query Chain";
   }

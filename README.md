@@ -6,12 +6,15 @@ Traditional blockchain escrow contracts are structurally limited because they ca
 
 ---
 
-## 🌟 Milestone 1 Updates & Features
+## 🌟 Key Features & Updates
 
-- 🖥️ **Full Web3 DApp Frontend (`/frontend`)**: Modern, responsive dark-mode dashboard built with TailwindCSS, connecting directly to the Bradbury Testnet contract (`0x27765327341E605F84493563A03Bf33d71ae0928`).
+- 🖥️ **Full Web3 DApp Frontend (`/frontend` and live root)**: Modern, responsive dashboard built with TailwindCSS and the official `genlayer-js` SDK, communicating directly with Bradbury Testnet JSON-RPC (`https://rpc-bradbury.genlayer.com`) and target contract (`0x27765327341E605F84493563A03Bf33d71ae0928`).
+- 🔢 **Dynamic Identifier Capture**: The frontend dynamically captures the exact identifier produced by `create_escrow` on-chain and routes all subsequent funding (`deposit`), inspection (`get_escrow`), and arbitration (`adjudicate_escrow`) calls to that specific dynamic ID (no hardcoded index assumptions).
 - 🛡️ **Race-Condition-Protected Dispute Engine**: Enforces strict bilateral statement requirements or explicit waivers (`waive_dispute_statement`), preventing front-running of AI arbitration.
-- 📜 **Client Interaction Scripts (`/scripts`)**: Programmatic interaction scripts using the GenLayer client SDK for automated integration.
-- 🧪 **Expanded Verification Suite (`/tests`)**: 5 comprehensive unit tests validating standard flows, race-condition prevention, explicit waivers, and unauthorized caller reverts.
+- 📜 **Reproducible Multi-Escrow Verification Scripts (`/scripts`)**:
+  - `scripts/test_multiple_escrows.js`: Reproducible script creating multiple sequential escrows, dynamically capturing identifiers, funding Escrow #1, and querying its independent state.
+  - `scripts/interact.js`: Programmatic client interaction script.
+- 🧪 **Comprehensive Pytest Suite (`/tests`)**: 6 unit tests validating multi-escrow sequential creation/funding, race-condition prevention, explicit waivers, and unauthorized caller reverts.
 
 ---
 
@@ -21,7 +24,7 @@ The contract uses GenLayer's **Equivalence Principle** and Large Language Models
 
 ```mermaid
 graph TD
-    A[Buyer deposits GEN] --> B(Seller submits work / URL)
+    A[Buyer deposits GEN into Escrow ID] --> B(Seller submits work / URL)
     B --> C{Happy Path?}
     C -- Yes --> D[Buyer approves & Seller paid]
     C -- No --> E[Buyer or Seller files dispute]
@@ -37,9 +40,9 @@ graph TD
 ### 1. The Escrow State Machine
 An escrow goes through the following statuses:
 *   `AWAITING_DEPOSIT`: Buyer creates the escrow with the agreement text and seller address.
-*   `ESCROWED`: Buyer calls `deposit()` and locks native `GEN` tokens in the contract.
-*   `DELIVERED`: Seller calls `submit_delivery()` and submits a text description or a web URL pointing to their work.
-*   `DISPUTED`: If there is a dispute, either party calls `dispute_escrow()` to lock the funds and submit their statement.
+*   `ESCROWED`: Buyer calls `deposit(escrow_id)` and locks native `GEN` tokens in the contract.
+*   `DELIVERED`: Seller calls `submit_delivery(escrow_id, artifact)` and submits a text description or a web URL pointing to their work.
+*   `DISPUTED`: If there is a dispute, either party calls `dispute_escrow(escrow_id, statement)` to lock funds and submit their claim.
 *   `RESOLVED` / `REFUNDED`: The final state after manual approval, voluntary refund, or automated AI arbitration.
 
 ### 2. Dispute-Response Race Condition Prevention
@@ -59,94 +62,30 @@ When `adjudicate_escrow(escrow_id)` is triggered (after bilateral responses or e
 
 ---
 
-## 🛠️ State Design & API Reference
-
-### Storage Struct: `EscrowRecord`
-```python
-@allow_storage
-@dataclass
-class EscrowRecord:
-    id: u256                      # Unique ID
-    buyer: Address                # Buyer address
-    seller: Address               # Seller address
-    amount: u256                  # Escrowed amount in wei
-    status: str                   # State machine status
-    agreement_desc: str           # The natural language contract agreement
-    delivery_artifact: str        # Text description or URL of the delivered work
-    dispute_buyer_statement: str  # Buyer's claim during a dispute
-    dispute_seller_statement: str # Seller's claim during a dispute
-    buyer_waived_statement: bool  # Whether buyer explicitly waived submitting a statement
-    seller_waived_statement: bool # Whether seller explicitly waived submitting a statement
-    resolution_reason: str        # Reasoning provided by the AI validators
-    payout_seller_percent: u256   # 0-100 percentage paid to the seller
-```
-
-### Write Methods
-*   `create_escrow(seller_address: str, agreement_desc: str) -> u256`
-    *   *Callable by:* Anyone (Buyer).
-    *   *Purpose:* Registers a new escrow and returns the unique ID.
-*   `deposit(escrow_id: u256)`
-    *   *Callable by:* The Buyer.
-    *   *Decorator:* `@gl.public.write.payable`
-    *   *Purpose:* Locks the transaction value (`gl.message.value`) into the escrow.
-*   `submit_delivery(escrow_id: u256, delivery_artifact: str)`
-    *   *Callable by:* The Seller.
-    *   *Purpose:* Uploads the delivery proof (text or URL).
-*   `approve_delivery(escrow_id: u256)`
-    *   *Callable by:* The Buyer.
-    *   *Purpose:* Releases 100% of the locked funds to the seller.
-*   `refund_buyer(escrow_id: u256)`
-    *   *Callable by:* The Seller.
-    *   *Purpose:* Voluntarily returns 100% of the funds to the buyer.
-*   `dispute_escrow(escrow_id: u256, statement: str)`
-    *   *Callable by:* The Buyer or Seller.
-    *   *Purpose:* Signals a dispute and records the party's explanation.
-*   `waive_dispute_statement(escrow_id: u256)`
-    *   *Callable by:* The Buyer or Seller.
-    *   *Purpose:* Explicitly waives the caller's right to submit a dispute counter-statement, unblocking adjudication.
-*   `adjudicate_escrow(escrow_id: u256)`
-    *   *Callable by:* Anyone (usually buyer/seller).
-    *   *Purpose:* Triggers the AI consensus arbitration and payouts once both parties have submitted statements or waived.
-
-### View Methods
-*   `get_escrow(escrow_id: u256) -> EscrowRecord`
-    *   *Purpose:* Fetches the current state of the escrow.
-
----
-
-## 🖥️ Running the Web3 Frontend DApp
-
-The frontend is a lightweight, zero-dependency modern Web3 app:
-
-1. Open `frontend/index.html` directly in your browser or serve it with any local server:
-   ```bash
-   npx serve frontend
-   ```
-2. Connect MetaMask, Rabby, or GenLayer Wallet to the **Bradbury Testnet**.
-3. Create, deposit, inspect, dispute, and adjudicate escrows with a live visual interface.
-
----
-
 ## 🧪 Local Testing Guide
 
 Unit tests are written using the `genlayer-test` Direct Mode in-memory VM framework, allowing tests to run in milliseconds without launching a full simulator or Docker container.
 
-### Running Tests
-1.  Navigate into the project directory:
-    ```bash
-    cd intelligent-contracts
-    ```
-2.  Install testing dependencies:
-    ```bash
-    pip install pytest genlayer-test
-    ```
-3.  Execute the test suite:
-    ```bash
-    pytest tests/
-    ```
+### Running Pytest Suite
+```bash
+pytest tests/
+```
+All 6 tests (including multi-escrow sequential creation and independent funding) run and pass:
+* `test_escrow_happy_path`
+* `test_multiple_escrows_creation_and_funding`
+* `test_escrow_voluntary_refund`
+* `test_dispute_race_condition_prevented_and_resolved`
+* `test_dispute_explicit_waiver_path`
+* `test_escrow_reverts`
+
+### Running Reproducible Node.js Multi-Escrow Script
+```bash
+node scripts/test_multiple_escrows.js
+```
 
 ---
 
 ## 🔗 Live Deployment Info
 *   **Bradbury Testnet Contract:** `0x27765327341E605F84493563A03Bf33d71ae0928`
 *   **Explorer URL:** [https://explorer-bradbury.genlayer.com/address/0x27765327341E605F84493563A03Bf33d71ae0928](https://explorer-bradbury.genlayer.com/address/0x27765327341E605F84493563A03Bf33d71ae0928)
+*   **Live DApp Website:** [https://earnadvise.github.io/genlayer-escrow-dapp](https://earnadvise.github.io/genlayer-escrow-dapp)

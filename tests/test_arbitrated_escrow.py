@@ -51,6 +51,65 @@ def test_escrow_happy_path(direct_deploy, direct_vm):
     assert escrow.resolution_reason == "Buyer approved delivery"
 
 
+def test_multiple_escrows_creation_and_funding(direct_deploy, direct_vm):
+    """
+    Creates at least two escrows (Escrow #0 and Escrow #1) and confirms that the
+    second escrow produces a unique sequential identifier, can be independently funded,
+    and queried with its distinct state.
+    """
+    escrow_contract = direct_deploy("contracts/ArbitratedEscrow.py")
+
+    alice = Address("0x0000000000000000000000000000000000000001")
+    bob = Address("0x0000000000000000000000000000000000000002")
+    charlie = Address("0x0000000000000000000000000000000000000003")
+
+    # 1. Create First Escrow (#0)
+    direct_vm.sender = alice
+    escrow_id_0 = escrow_contract.create_escrow(
+        bob.as_hex, "First project: Build backend API."
+    )
+    assert escrow_id_0 == u256(0)
+
+    # Fund First Escrow with 1000 wei
+    direct_vm.value = u256(1000)
+    escrow_contract.deposit(escrow_id_0)
+    direct_vm.value = u256(0)
+
+    escrow_0 = escrow_contract.get_escrow(escrow_id_0)
+    assert escrow_0.id == u256(0)
+    assert escrow_0.amount == u256(1000)
+    assert escrow_0.status == "ESCROWED"
+    assert escrow_0.seller == bob
+
+    # 2. Create Second Escrow (#1) with a different seller and agreement
+    direct_vm.sender = alice
+    escrow_id_1 = escrow_contract.create_escrow(
+        charlie.as_hex, "Second project: Design UI mockup."
+    )
+    # Confirm the produced identifier is 1
+    assert escrow_id_1 == u256(1)
+
+    # Fund Second Escrow with 2500 wei
+    direct_vm.value = u256(2500)
+    escrow_contract.deposit(escrow_id_1)
+    direct_vm.value = u256(0)
+
+    # 3. Query and confirm the second escrow can be retrieved and has correct independent state
+    escrow_1 = escrow_contract.get_escrow(escrow_id_1)
+    assert escrow_1.id == u256(1)
+    assert escrow_1.buyer == alice
+    assert escrow_1.seller == charlie
+    assert escrow_1.amount == u256(2500)
+    assert escrow_1.status == "ESCROWED"
+    assert escrow_1.agreement_desc == "Second project: Design UI mockup."
+
+    # Confirm Escrow #0 is unaffected
+    escrow_0_check = escrow_contract.get_escrow(escrow_id_0)
+    assert escrow_0_check.id == u256(0)
+    assert escrow_0_check.amount == u256(1000)
+    assert escrow_0_check.seller == bob
+
+
 def test_escrow_voluntary_refund(direct_deploy, direct_vm):
     """
     Tests the case where a seller voluntarily refunds a buyer.

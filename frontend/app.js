@@ -1,7 +1,7 @@
 /**
  * ArbitratedEscrow Web3 Frontend Application
  * Real On-Chain GenLayer JSON-RPC Integration (No Local Mock Simulations)
- * Connects directly to Browser Wallet (MetaMask / Rabby) or Custom GenLayer Account.
+ * Direct Browser Extension (MetaMask / Rabby) & Private Key Connection.
  */
 
 const CONTRACT_ADDRESS = "0x27765327341E605F84493563A03Bf33d71ae0928";
@@ -33,7 +33,7 @@ async function initDefaultClient() {
 
     const { createClient, createAccount, testnetBradbury } = window.GenLayerSDK;
 
-    // Check if user previously saved a custom account or connected browser wallet
+    // Check if user previously saved a custom key
     let savedKey = localStorage.getItem("genlayer_private_key");
     if (savedKey) {
       activeAccount = createAccount(savedKey);
@@ -42,15 +42,14 @@ async function initDefaultClient() {
         account: activeAccount
       });
       updateConnectedUI(activeAccount.address);
-    } else if (window.ethereum && window.ethereum.selectedAddress) {
-      await connectBrowserWallet();
-    } else {
-      // Create read-only client for initial browsing
-      client = createClient({ chain: testnetBradbury });
-      document.getElementById("lblActiveAccount").textContent = "Not Connected (Click Connect Wallet)";
-      document.getElementById("walletBtnText").textContent = "Connect Wallet";
-      document.getElementById("lblActiveBalance").textContent = "--";
+      return;
     }
+
+    // Default read-only client
+    client = createClient({ chain: testnetBradbury });
+    document.getElementById("lblActiveAccount").textContent = "Not Connected (Click Connect Wallet)";
+    document.getElementById("walletBtnText").textContent = "Connect Wallet";
+    document.getElementById("lblActiveBalance").textContent = "--";
 
     console.log("✅ GenLayer Client Initialized for Bradbury Testnet.");
   } catch (err) {
@@ -58,11 +57,12 @@ async function initDefaultClient() {
   }
 }
 
-// Connect Browser Wallet (MetaMask / Rabby / GenLayer Wallet)
-async function connectBrowserWallet() {
+// Connect Wallet Action (MetaMask / Rabby priority)
+async function connectWallet() {
   if (!window.GenLayerSDK) return;
   const { createClient, createAccount, testnetBradbury } = window.GenLayerSDK;
 
+  // 1. If MetaMask / Rabby / Browser Extension is available
   if (window.ethereum) {
     try {
       document.getElementById("walletBtnText").textContent = "Connecting...";
@@ -70,7 +70,6 @@ async function connectBrowserWallet() {
       if (accounts && accounts.length > 0) {
         const userAddr = accounts[0];
         
-        // Setup client with browser wallet
         client = createClient({
           chain: testnetBradbury
         });
@@ -81,12 +80,15 @@ async function connectBrowserWallet() {
         return;
       }
     } catch (err) {
-      console.warn("Browser wallet connection cancelled:", err);
+      console.error("MetaMask connection error:", err);
+      document.getElementById("walletBtnText").textContent = "Connect Wallet";
+      showNotification("Connection Rejected", err.message || "MetaMask connection was rejected.", "error");
+      return;
     }
   }
 
-  // Fallback: Ask for private key or generate temporary session key
-  const customKey = prompt("Enter your GenLayer / EVM Private Key to connect (or leave empty to generate a fresh testnet session key):");
+  // 2. If no browser wallet extension is installed, offer private key import
+  const customKey = prompt("No browser wallet detected. Enter your GenLayer private key to connect (or leave empty to generate a fresh testnet key):");
   if (customKey !== null) {
     let acc;
     if (customKey.trim()) {
@@ -155,18 +157,15 @@ function setupTabs() {
 
 // Setup Event Handlers for Real On-Chain Transactions
 function setupEventListeners() {
-  // Connect / Switch Wallet Button
-  document.getElementById("connectWalletBtn").addEventListener("click", async () => {
-    await connectBrowserWallet();
-  });
-
+  // Connect Wallet Button
+  document.getElementById("connectWalletBtn").addEventListener("click", connectWallet);
   document.getElementById("btnRefreshBalance").addEventListener("click", updateAccountBalance);
 
   // 1. Create Escrow Transaction (create_escrow) with Dynamic Identifier Capture
   document.getElementById("createEscrowForm").addEventListener("submit", async (e) => {
     e.preventDefault();
     if (!activeAccount) {
-      await connectBrowserWallet();
+      await connectWallet();
       if (!activeAccount) return;
     }
 
@@ -334,7 +333,7 @@ function setupEventListeners() {
 // Generic Contract Write Executor with dynamic ID
 async function executeContractWrite(functionName, args, statusMessage) {
   if (!client || !activeAccount) {
-    await connectBrowserWallet();
+    await connectWallet();
     if (!activeAccount) return;
   }
   try {

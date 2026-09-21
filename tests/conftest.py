@@ -69,8 +69,17 @@ def direct_deploy():
         sys.modules[module_name] = module
         spec.loader.exec_module(module)
 
-        # Retrieve the main class
-        contract_class = getattr(module, "ArbitratedEscrow")
+        # Retrieve the main class dynamically
+        contract_class = getattr(module, module_name, None)
+        if contract_class is None:
+            import inspect
+            for _, obj in inspect.getmembers(module, inspect.isclass):
+                if obj.__module__ == module_name:
+                    contract_class = obj
+                    break
+        if contract_class is None:
+            contract_class = getattr(module, "ArbitratedEscrow")
+
         instance = contract_class(*args, **kwargs)
 
         # Automatically bind empty mock collections for storage annotations

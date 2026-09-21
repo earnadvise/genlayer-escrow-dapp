@@ -1,7 +1,7 @@
 /**
  * ArbitratedEscrow Web3 Frontend Application
  * Real On-Chain GenLayer JSON-RPC Integration (No Local Mock Simulations)
- * Captures dynamic escrow identifiers on create_escrow and supports multi-escrow management.
+ * Connects directly to Browser Wallet (MetaMask / Rabby) or Custom GenLayer Account.
  */
 
 const CONTRACT_ADDRESS = "0x27765327341E605F84493563A03Bf33d71ae0928";
@@ -17,14 +17,14 @@ let knownEscrowIds = new Set([0]);
 document.addEventListener("DOMContentLoaded", async () => {
   if (window.lucide) lucide.createIcons();
   setupTabs();
-  await initGenLayerClient();
   setupEventListeners();
+  await initDefaultClient();
   // Query initial escrow on load
   await queryEscrowOnChain(0);
 });
 
-// Initialize real GenLayer SDK Client
-async function initGenLayerClient() {
+// Initialize default read client
+async function initDefaultClient() {
   try {
     if (!window.GenLayerSDK) {
       console.error("GenLayer SDK bundle not loaded yet.");
@@ -33,34 +33,90 @@ async function initGenLayerClient() {
 
     const { createClient, createAccount, testnetBradbury } = window.GenLayerSDK;
 
-    // Check localStorage for persisted session account or generate new
+    // Check if user previously saved a custom account or connected browser wallet
     let savedKey = localStorage.getItem("genlayer_private_key");
     if (savedKey) {
       activeAccount = createAccount(savedKey);
+      client = createClient({
+        chain: testnetBradbury,
+        account: activeAccount
+      });
+      updateConnectedUI(activeAccount.address);
+    } else if (window.ethereum && window.ethereum.selectedAddress) {
+      await connectBrowserWallet();
     } else {
-      activeAccount = createAccount();
-      localStorage.setItem("genlayer_private_key", activeAccount.privateKey);
+      // Create read-only client for initial browsing
+      client = createClient({ chain: testnetBradbury });
+      document.getElementById("lblActiveAccount").textContent = "Not Connected (Click Connect Wallet)";
+      document.getElementById("walletBtnText").textContent = "Connect Wallet";
+      document.getElementById("lblActiveBalance").textContent = "--";
     }
 
+    console.log("✅ GenLayer Client Initialized for Bradbury Testnet.");
+  } catch (err) {
+    console.error("Failed to initialize GenLayer client:", err);
+  }
+}
+
+// Connect Browser Wallet (MetaMask / Rabby / GenLayer Wallet)
+async function connectBrowserWallet() {
+  if (!window.GenLayerSDK) return;
+  const { createClient, createAccount, testnetBradbury } = window.GenLayerSDK;
+
+  if (window.ethereum) {
+    try {
+      document.getElementById("walletBtnText").textContent = "Connecting...";
+      const accounts = await window.ethereum.request({ method: "eth_requestAccounts" });
+      if (accounts && accounts.length > 0) {
+        const userAddr = accounts[0];
+        
+        // Setup client with browser wallet
+        client = createClient({
+          chain: testnetBradbury
+        });
+        activeAccount = { address: userAddr };
+
+        updateConnectedUI(userAddr);
+        showNotification("Wallet Connected", `Connected to: ${userAddr.substring(0, 6)}...${userAddr.substring(userAddr.length - 4)}`, "success");
+        return;
+      }
+    } catch (err) {
+      console.warn("Browser wallet connection cancelled:", err);
+    }
+  }
+
+  // Fallback: Ask for private key or generate temporary session key
+  const customKey = prompt("Enter your GenLayer / EVM Private Key to connect (or leave empty to generate a fresh testnet session key):");
+  if (customKey !== null) {
+    let acc;
+    if (customKey.trim()) {
+      acc = createAccount(customKey.trim());
+      localStorage.setItem("genlayer_private_key", customKey.trim());
+    } else {
+      acc = createAccount();
+      localStorage.setItem("genlayer_private_key", acc.privateKey);
+    }
+    activeAccount = acc;
     client = createClient({
       chain: testnetBradbury,
       account: activeAccount
     });
-
-    document.getElementById("lblActiveAccount").textContent = activeAccount.address;
-    document.getElementById("walletBtnText").textContent = `${activeAccount.address.substring(0, 6)}...${activeAccount.address.substring(activeAccount.address.length - 4)}`;
-
-    await updateAccountBalance();
-    console.log("✅ GenLayer Client Connected to Bradbury Testnet:", activeAccount.address);
-  } catch (err) {
-    console.error("Failed to initialize GenLayer client:", err);
-    showNotification("RPC Connection Notice", err.message, "error");
+    updateConnectedUI(activeAccount.address);
+    showNotification("Connected", `Active Account: ${activeAccount.address}`, "success");
+  } else {
+    document.getElementById("walletBtnText").textContent = "Connect Wallet";
   }
+}
+
+function updateConnectedUI(address) {
+  document.getElementById("lblActiveAccount").textContent = address;
+  document.getElementById("walletBtnText").textContent = `${address.substring(0, 6)}...${address.substring(address.length - 4)}`;
+  updateAccountBalance();
 }
 
 // Update balance via live RPC
 async function updateAccountBalance() {
-  if (!client || !activeAccount) return;
+  if (!client || !activeAccount || !activeAccount.address) return;
   try {
     const bal = await client.getBalance({ address: activeAccount.address });
     document.getElementById("lblActiveBalance").textContent = `${bal.toString()} WEI`;
@@ -99,18 +155,9 @@ function setupTabs() {
 
 // Setup Event Handlers for Real On-Chain Transactions
 function setupEventListeners() {
-  // Switch / Reconnect Wallet
+  // Connect / Switch Wallet Button
   document.getElementById("connectWalletBtn").addEventListener("click", async () => {
-    const customKey = prompt("Enter private key to import (or leave empty to generate a fresh account):");
-    if (customKey !== null) {
-      if (customKey.trim()) {
-        localStorage.setItem("genlayer_private_key", customKey.trim());
-      } else {
-        localStorage.removeItem("genlayer_private_key");
-      }
-      await initGenLayerClient();
-      showNotification("Account Updated", `Active address: ${activeAccount.address}`, "success");
-    }
+    await connectBrowserWallet();
   });
 
   document.getElementById("btnRefreshBalance").addEventListener("click", updateAccountBalance);
@@ -118,6 +165,11 @@ function setupEventListeners() {
   // 1. Create Escrow Transaction (create_escrow) with Dynamic Identifier Capture
   document.getElementById("createEscrowForm").addEventListener("submit", async (e) => {
     e.preventDefault();
+    if (!activeAccount) {
+      await connectBrowserWallet();
+      if (!activeAccount) return;
+    }
+
     const seller = document.getElementById("inputSellerAddress").value.trim();
     const desc = document.getElementById("inputAgreementDesc").value.trim();
     const depositVal = document.getElementById("inputDepositAmount").value || "0";
@@ -142,7 +194,6 @@ function setupEventListeners() {
 
       // 2. Dynamically resolve the newly created escrow ID by probing sequential indices
       let capturedEscrowId = null;
-      // Start probing from current highest known id or 0 upwards
       for (let probeId = 0; probeId < 20; probeId++) {
         try {
           const rec = await client.readContract({
@@ -154,12 +205,10 @@ function setupEventListeners() {
             capturedEscrowId = probeId;
           }
         } catch (e) {
-          // Break when we hit non-existent escrow
           break;
         }
       }
 
-      // If probe did not find match (e.g. index progression), assign next sequential
       if (capturedEscrowId === null) {
         const maxKnown = Math.max(...Array.from(knownEscrowIds), 0);
         capturedEscrowId = maxKnown + 1;
@@ -284,7 +333,10 @@ function setupEventListeners() {
 
 // Generic Contract Write Executor with dynamic ID
 async function executeContractWrite(functionName, args, statusMessage) {
-  if (!client) return alert("GenLayer Client not connected.");
+  if (!client || !activeAccount) {
+    await connectBrowserWallet();
+    if (!activeAccount) return;
+  }
   try {
     showTxBanner(statusMessage);
     const txHash = await client.writeContract({
